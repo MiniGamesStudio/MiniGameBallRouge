@@ -95,6 +95,21 @@ export class PlayerController {
         return this.m_PlayerNode ? this.m_PlayerNode.position : Vec3.ZERO;
     }
 
+    /**
+     * 本帧的瞄准方向。和玩家开火用的是同一个向量（不必是单位向量，
+     * BulletManager 出膛时会归一化），僚机的出膛方向也走它。
+     *
+     * 由 update() 里的 updateAimDirection() 刷新，所以要拿最新值必须
+     * 在 m_Player.update 之后读。
+     */
+    get aimX(): number {
+        return this.m_AimX;
+    }
+
+    get aimY(): number {
+        return this.m_AimY;
+    }
+
     /** 扣血，返回玩家是否已经倒下 */
     takeDamage(damage: number): boolean {
         if (damage <= 0 || this.m_Hp <= 0) return this.m_Hp <= 0;

@@ -1,4 +1,4 @@
-import { _decorator, Button, Node, RichText, SpriteFrame, view } from 'cc';
+import { _decorator, Button, Color, Label, Node, RichText, SpriteFrame, UITransform, view } from 'cc';
 import { ResManager } from '../../../engine/ResManager';
 import { UIBase } from '../../../engine/ui/UIBase';
 import { UIManager } from '../../../engine/ui/UIManager';
@@ -6,10 +6,16 @@ import { CommonBundleName, CommonUIID } from '../CommonUIConfig';
 import { CommonGameProgress } from '../CommonGameProgress';
 import { BattleWorld } from '../gameplay/BattleWorld';
 import { ALL_GAMEPLAY_ASSETS, DefaultTuning, GameTuning, toSpriteFramePath } from '../gameplay/GameConfig';
+import { SkillId, SKILL_DEFS } from '../gameplay/SkillConfig';
+import { SkillLevels } from '../gameplay/SkillSystem';
 const { ccclass, property } = _decorator;
 
 const DESIGN_ROOT_WIDTH = 750;
 const DESIGN_ROOT_HEIGHT = 1334;
+/** 技能槽（ToolBtn 118x131）上等级文字的位置与尺寸 */
+const SLOT_LABEL_Y = -60;
+const SLOT_LABEL_WIDTH = 118;
+const SLOT_LABEL_HEIGHT = 30;
 
 /**
  * 游戏主面板 — 弹球 Roguelike Demo
@@ -92,9 +98,8 @@ export class GamePanel extends UIBase {
 
     OnInit(): void {
         this.SetBtnEvent(this.m_PauseBtn, () => this.onPauseBtnClick());
-        this.SetBtnEvent(this.m_SkillOneBtn, () => this.onSkillOneBtnClick());
-        this.SetBtnEvent(this.m_SkillTwoBtn, () => this.onSkillTwoBtnClick());
-        this.SetBtnEvent(this.m_SkillThreeBtn, () => this.onSkillThreeBtnClick());
+        // 三个技能槽只做展示，不绑点击：它们压在底部拖拽区正上方，
+        // 留着可点就是一条拖不动的死区（详见 refreshSkillSlots）
         view.on('resize', this.adjustGameRootScale, this);
     }
 
@@ -112,6 +117,10 @@ export class GamePanel extends UIBase {
     }
 
     OnClose(): void {
+        // 升级面板是本面板开出来的子流程。GamePanel 被关掉（返回主界面）时
+        // 它必须一起收走，否则会孤零零悬在主面板上面
+        UIManager.GetInstance().ClosePanel(CommonUIID.SkillPanel);
+
         super.OnClose();
         this.m_IsPaused = false;
         this.disposeBattle();
@@ -136,6 +145,10 @@ export class GamePanel extends UIBase {
 
         this.disposeBattle();
         root.removeAllChildren();
+        // m_Battle 已经没了，这一步等于"全部收起"。必须在这里刷一次：
+        // 技能等级活在被 dispose 掉的那个 BattleWorld 里，光靠下面 then 里的那次
+        // 刷新的话，一旦加载失败就永远停在上一局的技能槽上
+        this.refreshSkillSlots();
 
         this.loadGameplayFrames()
             .then(frames => {
@@ -148,7 +161,10 @@ export class GamePanel extends UIBase {
                 this.m_Battle.start(root, this.buildTuning(), frames, {
                     onGameOver: () => this.onBattleGameOver(),
                     onRestart: () => this.restartCurrentLevel(),
+                    onLevelUp: levels => this.onBattleLevelUp(levels),
                 });
+                // 新的一局技能清零，把上一局点亮的槽位收回去
+                this.refreshSkillSlots();
                 this.NotifyOpenReady();
             })
             .catch(err => {
@@ -281,13 +297,82 @@ export class GamePanel extends UIBase {
         });
     }
 
-    // 技能按钮：玩法重写时在此接入（可复用 CommonUIID.AdPanel 的广告解锁流程）
-    private onSkillOneBtnClick(): void {
+    // ---------------------------------------------------------------- 升级选技能
+
+    /**
+     * 战斗侧升了一级，弹面板让玩家选技能。
+     *
+     * 冻结战斗是【这边】的责任，不是 BattleWorld 的：谁开面板谁负责停，
+     * 面板关掉时再解冻，中间不会出现"面板没了但游戏还停着"的空档。
+     */
+    private onBattleLevelUp(levels: Readonly<SkillLevels>): void {
+        // 已经停在别的地方（比如暂停面板开着）就别抢屏幕，等这次回来再说
+        if (this.m_IsPaused) return;
+
+        this.m_IsPaused = true;
+        const opened = UIManager.GetInstance().OpenPanel(CommonUIID.SkillPanel, {
+            levels,
+            onPick: (skillId: SkillId) => this.pickSkill(skillId),
+        });
+
+        // 面板没开起来（没注册 / 找不到 UI ID）就立刻解冻，
+        // 否则这一局就永远停在半空，连暂停按钮都救不回来（它也看 m_IsPaused）
+        if (!opened) this.m_IsPaused = false;
     }
 
-    private onSkillTwoBtnClick(): void {
+    private pickSkill(skillId: SkillId): void {
+        this.m_IsPaused = false;
+        this.m_Battle?.applySkillChoice(skillId);
+        this.refreshSkillSlots();
     }
 
-    private onSkillThreeBtnClick(): void {
+    /**
+     * 刷新 HUD 上的三个技能槽（UIRoot/ToolBtn1~3，图标已在 prefab 里配好）。
+     *
+     * 槽位是纯展示：未学过 = 整个藏起来，学过 = 亮出来并在图标下沿写等级。
+     * 按钮组件一律 enabled = false —— 这排槽位正好压在屏幕底部的拖拽区上，
+     * 留着可点会在玩家出生点附近咬出三段拖不动的死区；而且 interactable = false
+     * 挡不住这件事（Button 是先命中再检查 interactable 的），只有 enabled 才会
+     * 把它从触摸分发里摘掉。
+     */
+    private refreshSkillSlots(): void {
+        const levels = this.m_Battle?.skillLevels;
+        const buttons = [this.m_SkillOneBtn, this.m_SkillTwoBtn, this.m_SkillThreeBtn];
+
+        SKILL_DEFS.forEach((def, index) => {
+            const button = buttons[index];
+            if (!button || !button.node || !button.node.isValid) return;
+
+            const level = (levels && levels[def.id]) || 0;
+
+            button.enabled = false;
+            button.interactable = false;
+            button.node.active = level > 0;
+
+            const label = this.ensureSlotLabel(button.node);
+            if (label) label.string = `Lv.${level}`;
+        });
+    }
+
+    /** 技能槽上的等级文字：第一次用时建出来，之后复用 */
+    private ensureSlotLabel(slot: Node): Label | null {
+        const existing = slot.getChildByName('LevelLabel');
+        if (existing && existing.isValid) return existing.getComponent(Label);
+
+        const node = new Node('LevelLabel');
+        node.layer = slot.layer;
+        slot.addChild(node);
+        node.setPosition(0, SLOT_LABEL_Y, 0);
+
+        const transform = node.addComponent(UITransform);
+        transform.setContentSize(SLOT_LABEL_WIDTH, SLOT_LABEL_HEIGHT);
+
+        const label = node.addComponent(Label);
+        label.fontSize = 24;
+        label.lineHeight = 26;
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        label.color = new Color(255, 255, 255, 255);
+        return label;
     }
 }

@@ -50,12 +50,18 @@ export class BattleHud {
     /**
      * 刷新波次文案，内容没变就不碰 Label（避免每帧触发重排）。
      * 顺带把当前难度摊开显示，方便在预览里直接看出"越往后越难"有没有生效。
+     * playerLevel 是本局等级（每波 +1），升级面板就是围着它转的。
      */
-    updateStatus(waveCount: number, aliveCount: number, difficulty: DifficultyLevel): void {
+    updateStatus(
+        waveCount: number,
+        aliveCount: number,
+        difficulty: DifficultyLevel,
+        playerLevel: number,
+    ): void {
         if (!this.m_StatusLabel) return;
 
         const text = waveCount > 0
-            ? `第 ${waveCount} 波   敌人 ${aliveCount}   下落 ${difficulty.fallSpeed.toFixed(0)}   血量 x${difficulty.hpScale.toFixed(1)}`
+            ? `第 ${waveCount} 波   Lv.${playerLevel}   敌人 ${aliveCount}   下落 ${difficulty.fallSpeed.toFixed(0)}   血量 x${difficulty.hpScale.toFixed(1)}`
             : '';
         if (text === this.m_StatusText) return;
 

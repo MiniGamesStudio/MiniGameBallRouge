@@ -5943,5 +5943,50 @@
     "url": "db://assets/scripts/Game/CommonGame/gameplay/AimCursor.ts",
     "value": {},
     "versionCode": 1
+  },
+  "6af8b7bc-6e94-49e3-ac84-9026c1d2cb86": {
+    "url": "db://assets/subpackages/game/ui/SkillPanel.prefab",
+    "value": {
+      "depends": [
+        "3bf25aa3-df77-4011-a29d-020e61ca8403@f9941",
+        "41bc48ed-cbb4-4128-9189-a556ac18930c@f9941",
+        "3e01934e-93ad-4364-ac96-0c889a508773@f9941",
+        "ff834478-f152-463a-9dee-b291779724e1@f9941"
+      ],
+      "dependScripts": [
+        "5f2ebcda-8431-4c2c-a028-01d39c6b2cda"
+      ]
+    },
+    "versionCode": 2
+  },
+  "0fa02cff-bbbf-4230-aaae-446614916ca1": {
+    "url": "db://assets/scripts/Game/CommonGame/ui/PausePanel - 副本.ts",
+    "value": {},
+    "versionCode": 1
+  },
+  "8bfa460a-3328-4689-8354-1afd980183c9": {
+    "url": "db://assets/scripts/Game/CommonGame/gameplay/ChainLightning.ts",
+    "value": {},
+    "versionCode": 1
+  },
+  "2c3d432f-6bef-4035-8dcb-5344f20c3cf3": {
+    "url": "db://assets/scripts/Game/CommonGame/gameplay/SkillConfig.ts",
+    "value": {},
+    "versionCode": 1
+  },
+  "1ae6601c-b35b-4cf0-a9de-107cfd48cf72": {
+    "url": "db://assets/scripts/Game/CommonGame/gameplay/SkillSystem.ts",
+    "value": {},
+    "versionCode": 1
+  },
+  "c57e4751-59a8-4e3d-b557-6cb511e03581": {
+    "url": "db://assets/scripts/Game/CommonGame/gameplay/Wingman.ts",
+    "value": {},
+    "versionCode": 1
+  },
+  "5f2ebcda-8431-4c2c-a028-01d39c6b2cda": {
+    "url": "db://assets/scripts/Game/CommonGame/ui/SkillPanel.ts",
+    "value": {},
+    "versionCode": 1
   }
 }

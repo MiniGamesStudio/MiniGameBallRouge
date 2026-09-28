@@ -136,7 +136,13 @@
             "scripts\\Game\\CommonGame\\gameplay\\HitFlash.ts",
             "scripts\\Game\\CommonGame\\gameplay\\BulletManager.ts",
             "subpackages\\game\\texture\\game_cursor.png",
-            "scripts\\Game\\CommonGame\\gameplay\\AimCursor.ts"
+            "scripts\\Game\\CommonGame\\gameplay\\AimCursor.ts",
+            "subpackages\\game\\ui\\SkillPanel.prefab",
+            "scripts\\Game\\CommonGame\\gameplay\\ChainLightning.ts",
+            "scripts\\Game\\CommonGame\\gameplay\\SkillConfig.ts",
+            "scripts\\Game\\CommonGame\\gameplay\\SkillSystem.ts",
+            "scripts\\Game\\CommonGame\\gameplay\\Wingman.ts",
+            "scripts\\Game\\CommonGame\\ui\\SkillPanel.ts"
         ]
     }
 }

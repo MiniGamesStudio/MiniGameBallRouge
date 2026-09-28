@@ -19,6 +19,7 @@ export enum CommonUIID {
     PausePanel = 6,
     TransitionPanel = 7,
     AdPanel = 8,
+    SkillPanel = 9,
 }
 
 /**
@@ -33,4 +34,7 @@ export function registerCommonGameUI(): void {
     UIDataRegistry.Register(CommonUIID.PausePanel, UILayer.PopUp, "PausePanel", "ui/PausePanel", UIShowMode.Normal, 1, CommonBundleName.Game);
     UIDataRegistry.Register(CommonUIID.TransitionPanel, UILayer.TopMost, "TransitionPanel", "ui/TransitionPanel", UIShowMode.Normal, 0, CommonBundleName.Game);
     UIDataRegistry.Register(CommonUIID.AdPanel, UILayer.PopUp, "AdPanel", "ui/AdPanel", UIShowMode.Normal, 1, CommonBundleName.Game);
+    // 升级选技能。PopUp 层才能盖住 Normal 层的 GamePanel；
+    // cacheCount = 1 = 关闭时只隐藏、下次复用，所以状态必须在 OnOpen 里复位
+    UIDataRegistry.Register(CommonUIID.SkillPanel, UILayer.PopUp, "SkillPanel", "ui/SkillPanel", UIShowMode.Normal, 1, CommonBundleName.Game);
 }

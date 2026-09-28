@@ -771,11 +771,11 @@
       "time": 1790561775939.07
     },
     "scripts\\Game\\CommonGame": {
-      "time": 1790569024304.3525,
+      "time": 1790586837472.135,
       "uuid": "73edaae5-0b7a-425f-afe0-f601833012aa"
     },
     "scripts\\Game\\CommonGame\\ui": {
-      "time": 1790581352527.2744,
+      "time": 1790587418372.1184,
       "uuid": "191bdeae-9286-465e-a518-a494dbf87eba"
     },
     "scripts\\Game\\CommonGame\\CommonGameEntry.ts": {
@@ -783,7 +783,7 @@
       "uuid": "c63a2908-67d7-4c12-a0ce-6c9030278f78"
     },
     "scripts\\Game\\CommonGame\\CommonUIConfig.ts": {
-      "time": 1790561775935.0696,
+      "time": 1790586837122.8308,
       "uuid": "1ddebbfb-1c31-4d1a-8cc1-b8ee53713dfb"
     },
     "scripts\\Game\\CommonGame\\ui\\LoadingPanel.ts": {
@@ -819,7 +819,7 @@
       "time": 1790561775937.0703
     },
     "scripts\\Game\\CommonGame\\ui\\GamePanel.ts": {
-      "time": 1790581351712.196,
+      "time": 1790587418268.1206,
       "uuid": "0f6f935e-dd32-4f8f-870f-858c31678dec"
     },
     "scripts\\Game\\CommonGame\\level.meta": {
@@ -947,7 +947,7 @@
       "uuid": "dbdbb2c4-2818-4a64-9df1-b1a9ac920201"
     },
     "subpackages\\game\\ui": {
-      "time": 1790581363385.3518,
+      "time": 1790583039635.029,
       "uuid": "4d8dfd25-3d5b-42a9-a8e2-245f2d81c301"
     },
     "subpackages\\rank\\ranking": {
@@ -1409,15 +1409,15 @@
       "time": 1790569024320.3547
     },
     "scripts\\Game\\CommonGame\\gameplay": {
-      "time": 1790581503017.0935,
+      "time": 1790587734445.8794,
       "uuid": "41e264c4-2544-493a-ba47-8d5aa7b1de4e"
     },
     "scripts\\Game\\CommonGame\\gameplay\\BattleHud.ts": {
-      "time": 1790578637777.0342,
+      "time": 1790586635113.9192,
       "uuid": "ec58925b-1e16-4f2a-857e-dd51b3758e69"
     },
     "scripts\\Game\\CommonGame\\gameplay\\BattleWorld.ts": {
-      "time": 1790578646786.4377,
+      "time": 1790586729402.0818,
       "uuid": "bff72538-1c41-47e9-9220-9e5165d431e2"
     },
     "scripts\\Game\\CommonGame\\gameplay\\EnemyManager.ts": {
@@ -1429,7 +1429,7 @@
       "uuid": "1bf4dab4-a24b-4d7d-88f5-8a7a0d6da8a8"
     },
     "scripts\\Game\\CommonGame\\gameplay\\PlayerController.ts": {
-      "time": 1790575998418.62,
+      "time": 1790586349120.453,
       "uuid": "67f27f11-0b83-418f-8d12-b4712f69e629"
     },
     "scripts\\Game\\CommonGame\\gameplay\\HitFlash.ts.meta": {
@@ -1443,7 +1443,7 @@
       "time": 1790573087648.5237
     },
     "scripts\\Game\\CommonGame\\gameplay\\BulletManager.ts": {
-      "time": 1790581502643.0437,
+      "time": 1790586511505.1306,
       "uuid": "23f2184c-4456-49b0-a86c-c68e366eeff6"
     },
     "subpackages\\game\\texture\\game_cursor.png.meta": {
@@ -1459,6 +1459,48 @@
     "scripts\\Game\\CommonGame\\gameplay\\AimCursor.ts": {
       "time": 1790575888251.3228,
       "uuid": "1353b1b1-d6b2-43ec-b0ac-b2687e4d5e85"
+    },
+    "subpackages\\game\\ui\\SkillPanel.prefab.meta": {
+      "time": 1790583039639.0312
+    },
+    "subpackages\\game\\ui\\SkillPanel.prefab": {
+      "time": 1790586821059.1492,
+      "uuid": "6af8b7bc-6e94-49e3-ac84-9026c1d2cb86"
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\ChainLightning.ts.meta": {
+      "time": 1790587734452.8813
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\SkillConfig.ts.meta": {
+      "time": 1790587734452.8813
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\SkillSystem.ts.meta": {
+      "time": 1790587734453.882
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\Wingman.ts.meta": {
+      "time": 1790587734453.882
+    },
+    "scripts\\Game\\CommonGame\\ui\\SkillPanel.ts.meta": {
+      "time": 1790586765222.892
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\ChainLightning.ts": {
+      "time": 1790586320811.864,
+      "uuid": "8bfa460a-3328-4689-8354-1afd980183c9"
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\SkillConfig.ts": {
+      "time": 1790586280776.9832,
+      "uuid": "2c3d432f-6bef-4035-8dcb-5344f20c3cf3"
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\SkillSystem.ts": {
+      "time": 1790586299757.062,
+      "uuid": "1ae6601c-b35b-4cf0-a9de-107cfd48cf72"
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\Wingman.ts": {
+      "time": 1790586366995.2556,
+      "uuid": "c57e4751-59a8-4e3d-b557-6cb511e03581"
+    },
+    "scripts\\Game\\CommonGame\\ui\\SkillPanel.ts": {
+      "time": 1790587388690.8677,
+      "uuid": "5f2ebcda-8431-4c2c-a028-01d39c6b2cda"
     }
   },
   "missing": {}

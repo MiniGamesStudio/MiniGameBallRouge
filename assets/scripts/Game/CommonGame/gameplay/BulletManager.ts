@@ -52,11 +52,25 @@ export class BulletManager {
     private m_Radius = 0;
 
     private m_Bullets: BulletData[] = [];
+    /**
+     * 【免费弹】通道：僚机打出来的子弹。走完全一样的移动/反弹/回身/回收，
+     * 唯一区别是不占玩家弹匣 —— 所以单独一个数组，而不是在子弹上加标志位。
+     * 这样 activeCount / capacity / canFire 的语义一个都没变，
+     * 弹匣的账本仍然只关于"玩家的子弹"。
+     */
+    private m_FreeBullets: BulletData[] = [];
+    /** 免费弹的在场上限。0 = 关闭免费通道 */
+    private m_FreeCapacity = 0;
+    /** 单发伤害倍率（重炮）。由技能层按等级重算后写入，不做累乘 */
+    private m_DamageScale = 1;
 
     init(parent: Node, tuning: GameTuning, frame: SpriteFrame): void {
         this.m_Parent = parent;
         this.m_Tuning = tuning;
         this.m_Frame = frame;
+        // 每次 start 都是新对象，这两项复位只是让"复用同一个实例"也不会串味
+        this.m_FreeCapacity = 0;
+        this.m_DamageScale = 1;
 
         // 子弹按原图尺寸显示，不缩放
         const rect = frame ? frame.rect : null;
@@ -85,14 +99,72 @@ export class BulletManager {
         return this.m_Bullets.length < this.capacity;
     }
 
+    /** 还在场的免费弹（僚机弹） */
+    get freeBullets(): BulletData[] {
+        return this.m_FreeBullets;
+    }
+
+    get freeActiveCount(): number {
+        return this.m_FreeBullets.length;
+    }
+
     /**
-     * 从 (originX, originY) 朝 (dirX, dirY) 打出一发，没有余弹时返回 false。
+     * 免费弹的在场上限。0 = 关闭免费通道。
+     *
+     * 僚机弹没有弹匣兜底，而"近水平"的弹是永远落不到底、也就永远回不来的
+     * （见类注释里的回家规则），所以必须给个硬上限，否则节点会无限堆积。
+     */
+    setFreeCapacity(capacity: number): void {
+        this.m_FreeCapacity = Math.max(0, Math.floor(capacity));
+    }
+
+    /** 当前单发实际伤害 = 配置伤害 × 技能倍率 */
+    get bulletDamage(): number {
+        return Math.max(0, this.m_Tuning.bulletDamage) * this.m_DamageScale;
+    }
+
+    /**
+     * 设置伤害倍率（重炮）。
+     *
+     * 由技能层【按等级重算】后整个传进来（1 + 0.2 × 等级），而不是这里累乘：
+     * 累乘在面板卡片被连点两下时会被静默地多乘一次，且再也退不回来。
+     * 也不去改 m_Tuning.bulletDamage —— 那份 tuning 是和玩家、敌人共用的同一个对象。
+     */
+    setDamageScale(scale: number): void {
+        this.m_DamageScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+    }
+
+    /**
+     * 从 (originX, originY) 朝 (dirX, dirY) 打出一发【玩家】子弹，没有余弹时返回 false。
      *
      * 方向由瞄准游标决定（见 PlayerController）；方向给不出来时退回向正上方，
      * 免得游标正好压在玩家身上导致子弹原地不动。
      */
     fire(originX: number, originY: number, dirX: number, dirY: number): boolean {
-        if (!this.m_Frame || !this.m_Parent || !this.canFire) return false;
+        if (!this.canFire) return false;
+        return this.spawn(originX, originY, dirX, dirY, this.m_Bullets);
+    }
+
+    /**
+     * 打出一发【免费弹】（僚机用）：不占玩家弹匣，但同样受限在场上限。
+     *
+     * 出膛点离玩家必须有富余（僚机环绕半径 110 >> 捕捉半径 55），
+     * 否则子弹一出生就落在回收圈里，第一步就被收掉。
+     */
+    fireFree(originX: number, originY: number, dirX: number, dirY: number): boolean {
+        if (this.m_FreeBullets.length >= this.m_FreeCapacity) return false;
+        return this.spawn(originX, originY, dirX, dirY, this.m_FreeBullets);
+    }
+
+    /** 两者的共同实现：只有"记到哪个账本上"不同 */
+    private spawn(
+        originX: number,
+        originY: number,
+        dirX: number,
+        dirY: number,
+        list: BulletData[],
+    ): boolean {
+        if (!this.m_Frame || !this.m_Parent) return false;
 
         const speed = Math.max(1, this.m_Tuning.bulletSpeed);
         const length = Math.sqrt(dirX * dirX + dirY * dirY);
@@ -110,7 +182,7 @@ export class BulletManager {
         transform.setContentSize(this.m_Width, this.m_Height);
 
         node.setPosition(originX, originY, 0);
-        this.m_Bullets.push({
+        list.push({
             node,
             vx: unitX * speed,
             vy: unitY * speed,
@@ -135,11 +207,27 @@ export class BulletManager {
         enemies: EnemyData[],
         onEnemyHit: (enemy: EnemyData, damage: number) => void,
     ): void {
-        if (this.m_Bullets.length === 0 || dt <= 0) return;
+        if (dt <= 0) return;
+        // 两个账本都要看：只看弹匣的话，玩家弹打空时整帧直接返回，
+        // 僚机弹会跟着一起冻住
+        if (this.m_Bullets.length === 0 && this.m_FreeBullets.length === 0) return;
 
+        this.stepList(this.m_Bullets, dt, playerPos, playerRadius, enemies, onEnemyHit);
+        this.stepList(this.m_FreeBullets, dt, playerPos, playerRadius, enemies, onEnemyHit);
+    }
+
+    /** 推进一批子弹。玩家弹和免费弹走的是同一套规则，只有账本不同 */
+    private stepList(
+        list: BulletData[],
+        dt: number,
+        playerPos: Readonly<{ x: number; y: number }>,
+        playerRadius: number,
+        enemies: EnemyData[],
+        onEnemyHit: (enemy: EnemyData, damage: number) => void,
+    ): void {
         // 倒序遍历：回收会从数组里摘掉当前项，倒着走不会影响还没处理的元素
-        for (let i = this.m_Bullets.length - 1; i >= 0; i--) {
-            const bullet = this.m_Bullets[i];
+        for (let i = list.length - 1; i >= 0; i--) {
+            const bullet = list[i];
             const speed = Math.sqrt(bullet.vx * bullet.vx + bullet.vy * bullet.vy);
             const stepCount = Math.min(
                 MAX_SUBSTEP_COUNT,
@@ -174,7 +262,9 @@ export class BulletManager {
 
     clear(): void {
         this.m_Bullets.slice().forEach(bullet => this.recycle(bullet));
+        this.m_FreeBullets.slice().forEach(bullet => this.recycle(bullet));
         this.m_Bullets.length = 0;
+        this.m_FreeBullets.length = 0;
     }
 
     /**
@@ -270,7 +360,7 @@ export class BulletManager {
             if (overlapY <= 0) continue;
 
             this.reflectOffEnemy(bullet, enemy, overlapX, overlapY);
-            onEnemyHit(enemy, this.m_Tuning.bulletDamage);
+            onEnemyHit(enemy, this.bulletDamage);
             // 一步只处理一次碰撞：已经弹出去了，再判下去没有意义。
             // 这里必须立刻 return —— onEnemyHit 可能当场把敌人从 enemies 数组里摘掉，
             // 继续遍历这个数组就是在"边遍历边删"。
@@ -316,8 +406,15 @@ export class BulletManager {
     }
 
     private recycle(bullet: BulletData): void {
-        const index = this.m_Bullets.indexOf(bullet);
-        if (index >= 0) this.m_Bullets.splice(index, 1);
+        // 两个账本里找一遍：玩家弹和免费弹共用一个回收实现，
+        // 调用方（tryRecycle / clear）不需要知道自己处理的是哪一种
+        let index = this.m_Bullets.indexOf(bullet);
+        if (index >= 0) {
+            this.m_Bullets.splice(index, 1);
+        } else {
+            index = this.m_FreeBullets.indexOf(bullet);
+            if (index >= 0) this.m_FreeBullets.splice(index, 1);
+        }
 
         if (bullet.node && bullet.node.isValid) {
             bullet.node.removeFromParent();
