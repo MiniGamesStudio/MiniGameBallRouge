@@ -75,6 +75,19 @@ export class GamePanel extends UIBase {
     @property({ tooltip: '【玩家】最大血量' })
     m_PlayerMaxHp: number = DefaultTuning.playerMaxHp;
 
+    @property({ tooltip: '【难度】每过一波，单波行数的增量（0.5 = 每两波多一行），第 1 波是基准' })
+    m_DifficultyRowPerWave: number = DefaultTuning.difficultyRowPerWave;
+    @property({ tooltip: '【难度】单波行数上限。要 >= 单波最多行数，否则会把行数压到比基准还少' })
+    m_DifficultyRowMax: number = DefaultTuning.difficultyRowMax;
+    @property({ tooltip: '【难度】每过一波，敌人下落速度的增幅（0.08 = 每波 +8%）' })
+    m_DifficultySpeedGrowth: number = DefaultTuning.difficultySpeedGrowth;
+    @property({ tooltip: '【难度】下落速度倍率上限' })
+    m_DifficultySpeedMax: number = DefaultTuning.difficultySpeedMax;
+    @property({ tooltip: '【难度】每过一波，敌人血量的增幅（0.12 = 每波 +12%）' })
+    m_DifficultyHpGrowth: number = DefaultTuning.difficultyHpGrowth;
+    @property({ tooltip: '【难度】血量倍率上限' })
+    m_DifficultyHpMax: number = DefaultTuning.difficultyHpMax;
+
     private m_CurrentLevel: number = 1;
     private m_IsPaused: boolean = false;
     private m_Battle: BattleWorld = null;
@@ -189,6 +202,17 @@ export class GamePanel extends UIBase {
             enemyAttackInterval: Math.max(0.05, this.m_EnemyAttackInterval),
             enemyAttackDamage: Math.max(0, this.m_EnemyAttackDamage),
             playerMaxHp: Math.max(1, this.m_PlayerMaxHp),
+            difficultyRowPerWave: Math.max(0, this.m_DifficultyRowPerWave),
+            // 上限至少要跟得上基准行数，否则难度曲线会反过来削减行数
+            difficultyRowMax: Math.max(
+                Math.max(1, Math.floor(this.m_WaveRowMax)),
+                Math.floor(this.m_DifficultyRowMax),
+            ),
+            difficultySpeedGrowth: Math.max(0, this.m_DifficultySpeedGrowth),
+            // 倍率下限锁在 1：小于 1 会变成"越往后越简单"
+            difficultySpeedMax: Math.max(1, this.m_DifficultySpeedMax),
+            difficultyHpGrowth: Math.max(0, this.m_DifficultyHpGrowth),
+            difficultyHpMax: Math.max(1, this.m_DifficultyHpMax),
         };
     }
 

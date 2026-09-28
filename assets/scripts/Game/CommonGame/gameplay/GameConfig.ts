@@ -165,6 +165,21 @@ export interface GameTuning {
     enemyAttackDamage: number;
     /** 玩家最大血量 */
     playerMaxHp: number;
+    /** 【难度】每过一波，单波行数的增量（0.5 = 每两波多一行） */
+    difficultyRowPerWave: number;
+    /**
+     * 【难度】单波行数上限。
+     * 必须 >= waveRowMax，否则难度曲线反而会把行数"压"到比配置的基准还少。
+     */
+    difficultyRowMax: number;
+    /** 【难度】每过一波，敌人下落速度的增幅（0.08 = 每波 +8%） */
+    difficultySpeedGrowth: number;
+    /** 【难度】下落速度倍率上限 */
+    difficultySpeedMax: number;
+    /** 【难度】每过一波，敌人血量的增幅（0.12 = 每波 +12%） */
+    difficultyHpGrowth: number;
+    /** 【难度】血量倍率上限 */
+    difficultyHpMax: number;
 }
 
 export const DefaultTuning: GameTuning = {
@@ -185,7 +200,76 @@ export const DefaultTuning: GameTuning = {
     enemyAttackInterval: 1,
     enemyAttackDamage: 5,
     playerMaxHp: 100,
+    difficultyRowPerWave: 1,
+    difficultyRowMax: 30,
+    difficultySpeedGrowth: 0.08,
+    difficultySpeedMax: 2.5,
+    difficultyHpGrowth: 0.12,
+    difficultyHpMax: 2.5,
 };
+
+/**
+ * 某一波的实际难度。第 1 波是基准（行数/速度/血量都用原始值），从第 2 波开始成长。
+ */
+export interface DifficultyLevel {
+    /** 波次，从 1 开始 */
+    wave: number;
+    /** 本波行数区间 */
+    rowMin: number;
+    rowMax: number;
+    /** 敌人墙下移速度（像素/秒），已含难度加成 */
+    fallSpeed: number;
+    /** 敌人血量倍率，1 = 原始血量 */
+    hpScale: number;
+}
+
+/** 成长步数：第 1 波是基准，所以第 N 波已经走了 N-1 步 */
+function difficultySteps(wave: number): number {
+    const safeWave = Number.isFinite(wave) ? Math.floor(wave) : 1;
+    return Math.max(0, safeWave - 1);
+}
+
+/**
+ * 按波次算难度 —— 行数、下落速度、血量三条线一起涨，各自带自己的封顶。
+ *
+ * 都做成【线性 + 封顶】而不是指数：demo 里要的是"看得见的变难"，
+ * 指数在第 10 波左右就会直接崩掉，而且不好反推某一波到底是多少。
+ * 想改成长节奏只调 GameTuning 里的几个 difficulty* 数值，不用碰逻辑。
+ */
+export function getDifficulty(wave: number, tuning: GameTuning): DifficultyLevel {
+    const steps = difficultySteps(wave);
+
+    // 行数：增长率允许小数，先累乘再取整，这样 0.5/波 = 每两波多一行
+    const rowBonus = Math.floor(Math.max(0, tuning.difficultyRowPerWave) * steps);
+    const rowCap = Math.max(1, Math.floor(tuning.difficultyRowMax));
+    const rowMin = Math.min(rowCap, Math.max(1, Math.floor(tuning.waveRowMin)) + rowBonus);
+    const rowMax = Math.min(rowCap, Math.max(rowMin, Math.max(1, Math.floor(tuning.waveRowMax)) + rowBonus));
+
+    const speedScale = Math.min(
+        Math.max(1, tuning.difficultySpeedMax),
+        1 + Math.max(0, tuning.difficultySpeedGrowth) * steps,
+    );
+    const hpScale = Math.min(
+        Math.max(1, tuning.difficultyHpMax),
+        1 + Math.max(0, tuning.difficultyHpGrowth) * steps,
+    );
+
+    return {
+        wave: steps + 1,
+        rowMin,
+        rowMax,
+        fallSpeed: Math.max(1, tuning.enemyFallSpeed) * speedScale,
+        hpScale,
+    };
+}
+
+/**
+ * 敌人血量按难度加成。向上取整，并保证至少 1 ——
+ * 取整是为了让数值和 HUD 显示是整数，"至少 1" 是为了不让某个倍率把杂兵抹成 0 血。
+ */
+export function scaleEnemyHp(baseHp: number, hpScale: number): number {
+    return Math.max(1, Math.ceil(baseHp * hpScale));
+}
 
 /** 按权重随机取一个枚举值 */
 export function pickWeighted<T extends number>(weights: Record<number, number>, candidates: T[]): T {

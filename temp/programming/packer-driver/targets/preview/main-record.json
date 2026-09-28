@@ -514,7 +514,7 @@
       ]
     },
     "cce:/internal/x/prerequisite-imports": {
-      "mTimestamp": 16150278.3737,
+      "mTimestamp": 17023874.2831,
       "chunkId": "6d8fd2b0177941b032ddc0733af48a561fb60657",
       "imports": [
         {
@@ -27774,7 +27774,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/GamePanel.ts": {
       "mTimestamp": {
-        "mtime": 1790576080838.104,
+        "mtime": 1790578665271.8872,
         "uuid": "0f6f935e-dd32-4f8f-870f-858c31678dec"
       },
       "chunkId": "895e1396d894162089e6130ded2b186ffb39fb45",
@@ -30321,7 +30321,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BattleHud.ts": {
       "mTimestamp": {
-        "mtime": 1790568444762.2864,
+        "mtime": 1790578637777.0342,
         "uuid": "ec58925b-1e16-4f2a-857e-dd51b3758e69"
       },
       "chunkId": "41b8583de7e91a33368b52473ed7f9e3fa4c3476",
@@ -30355,11 +30355,11 @@
           "loc": {
             "start": {
               "line": 2,
-              "column": 29
+              "column": 46
             },
             "end": {
               "line": 2,
-              "column": 43
+              "column": 60
             }
           }
         }
@@ -30405,7 +30405,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BattleWorld.ts": {
       "mTimestamp": {
-        "mtime": 1790576070725.0598,
+        "mtime": 1790578646786.4377,
         "uuid": "bff72538-1c41-47e9-9220-9e5165d431e2"
       },
       "chunkId": "6739b58f79fbb038eee3060c9c19791297939aaa",
@@ -30698,7 +30698,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/EnemyManager.ts": {
       "mTimestamp": {
-        "mtime": 1790571084842.271,
+        "mtime": 1790578619305.824,
         "uuid": "c7a56075-baae-4a3b-b2ac-523019989a1f"
       },
       "chunkId": "b5c976fb1455ae2b6b3f07c788357ca1776b236b",
@@ -30745,11 +30745,11 @@
           "resolved": "__unresolved_2",
           "loc": {
             "start": {
-              "line": 20,
+              "line": 23,
               "column": 7
             },
             "end": {
-              "line": 20,
+              "line": 23,
               "column": 21
             }
           }
@@ -30907,7 +30907,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/GameConfig.ts": {
       "mTimestamp": {
-        "mtime": 1790578089920.0256,
+        "mtime": 1790578553013.9648,
         "uuid": "1bf4dab4-a24b-4d7d-88f5-8a7a0d6da8a8"
       },
       "chunkId": "f4996fe77677035eaac24fa083b4ff1de0590ed1",

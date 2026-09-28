@@ -94,7 +94,7 @@ export class BattleWorld {
         this.m_Enemies.update(step, this.m_Player.position, damage => this.damagePlayer(damage));
 
         this.m_Hud.updateHp(this.m_Player.hp, this.m_Player.maxHp);
-        this.m_Hud.updateStatus(this.m_Enemies.waveCount, this.m_Enemies.aliveEnemies.length);
+        this.m_Hud.updateStatus(this.m_Enemies.waveCount, this.m_Enemies.aliveEnemies.length, this.m_Enemies.difficulty);
     }
 
     dispose(): void {

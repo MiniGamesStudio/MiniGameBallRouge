@@ -6,6 +6,7 @@ import {
     ColorWeights,
     DESIGN_HEIGHT,
     DefaultTuning,
+    DifficultyLevel,
     ENEMY_CORNER_RADIUS,
     EnemyColor,
     EnemyShape,
@@ -14,9 +15,11 @@ import {
     MAX_WALL_ROWS,
     ShapeWeights,
     getCellSpan,
+    getDifficulty,
     getEnemyAssetName,
     getEnemyMaxHp,
     pickWeighted,
+    scaleEnemyHp,
 } from './GameConfig';
 
 /** 波次排布里的一个敌人（尚未实例化），rowOffset 相对本波首行 */
@@ -77,6 +80,11 @@ export class EnemyManager {
     private m_BlockCursor = 0;
     /** 已生成的波数，给 HUD 用 */
     private m_WaveCount = 0;
+    /**
+     * 当前波次的难度快照。只在开新波时刷新，
+     * 这样整面墙的下落速度在一波之内是恒定的（速度突变只发生在波与波之间）。
+     */
+    private m_Difficulty: DifficultyLevel = null;
 
     private m_BottomLineY = 0;
     private m_SpawnLineY = 0;
@@ -91,6 +99,8 @@ export class EnemyManager {
         this.m_SpawnLineY = DESIGN_HEIGHT * 0.5 + CELL_SIZE;
         // 棋盘要按格子总宽居中，而不是按屏幕宽：5 格 x 80 = 400，两边各留 175
         this.m_BoardLeft = -GRID_COL_COUNT * CELL_SIZE * 0.5;
+        // BattleWorld 开局会立刻 generateWave()，这里只是给个合法初值
+        this.m_Difficulty = getDifficulty(1, tuning);
     }
 
     /** 全部存活敌人（含已俯冲的） */
@@ -108,21 +118,30 @@ export class EnemyManager {
         return Math.max(0, this.m_Block.length - this.m_BlockCursor);
     }
 
+    /** 当前波次的难度（行数区间 / 下落速度 / 血量倍率），给 HUD 和调试用 */
+    get difficulty(): DifficultyLevel {
+        return this.m_Difficulty;
+    }
+
     /**
      * 生成一波排布，返回本波行数。已经在场上的敌人不受影响。
      *
      * 上一波还有没入场的行时把它们保留在新波前面，避免墙被堆满时静默丢掉敌人
      * （竖版 double 不会跨波，所以按行拼接是安全的）。
+     *
+     * 行数按【本波】的难度取：先自增波次再算难度，所以第 1 波就是基准值。
      */
     generateWave(): number {
-        const min = Math.max(1, Math.floor(this.m_Tuning.waveRowMin));
-        const max = Math.max(min, Math.floor(this.m_Tuning.waveRowMax));
+        this.m_WaveCount++;
+        this.m_Difficulty = getDifficulty(this.m_WaveCount, this.m_Tuning);
+
+        const min = this.m_Difficulty.rowMin;
+        const max = Math.max(min, this.m_Difficulty.rowMax);
         const rowCount = min + Math.floor(Math.random() * (max - min + 1));
         const backlog = this.m_BlockCursor > 0 ? this.m_Block.slice(this.m_BlockCursor) : this.m_Block;
 
         this.m_Block = backlog.concat(this.generateBlock(rowCount));
         this.m_BlockCursor = 0;
-        this.m_WaveCount++;
         return rowCount;
     }
 
@@ -144,12 +163,16 @@ export class EnemyManager {
         const row: EnemyRow = { y, enemies: [] };
         this.m_Rows.unshift(row);
 
+        // 血量按【入场那一刻】的难度算：一波的行可能拖到下一波才入场（墙堆满时排队），
+        // 那时它本来就该按新的难度出场，所以这里不缓存生成时的倍率。
+        const hpScale = this.m_Difficulty ? this.m_Difficulty.hpScale : 1;
+
         for (let col = 0; col < GRID_COL_COUNT; col++) {
             const spec = specs[col];
             // 一个 spec 会占住它覆盖的每一个格子，这里只在【锚点格】建节点：
             // 少了 col 这一项判断的话，横版 double 的两格会各建一次，两个节点完全重叠。
             if (!spec || spec.col !== col || spec.rowOffset !== rowOffset) continue;
-            row.enemies.push(this.createEnemy(spec, row));
+            row.enemies.push(this.createEnemy(spec, row, hpScale));
         }
         return true;
     }
@@ -166,9 +189,10 @@ export class EnemyManager {
             enemy.flash?.update(dt);
         }
 
-        // 1. 整面墙刚性下移
+        // 1. 整面墙刚性下移（速度取自本波难度快照：一波之内恒定，换波时才跳变）
+        const fallSpeed = this.m_Difficulty ? this.m_Difficulty.fallSpeed : tuning.enemyFallSpeed;
         for (const row of this.m_Rows) {
-            row.y -= tuning.enemyFallSpeed * dt;
+            row.y -= fallSpeed * dt;
         }
 
         // 2. 墙上的敌人跟随所属行，越过底线后脱离行转为俯冲
@@ -250,6 +274,7 @@ export class EnemyManager {
         this.m_Block = [];
         this.m_BlockCursor = 0;
         this.m_WaveCount = 0;
+        this.m_Difficulty = getDifficulty(1, this.m_Tuning);
     }
 
     /**
@@ -318,7 +343,7 @@ export class EnemyManager {
         return true;
     }
 
-    private createEnemy(spec: EnemySpec, row: EnemyRow): EnemyData {
+    private createEnemy(spec: EnemySpec, row: EnemyRow, hpScale: number): EnemyData {
         const span = getCellSpan(spec.shape);
 
         const node = new Node(`Enemy_${spec.color}_${spec.shape}_${spec.col}`);
@@ -344,7 +369,8 @@ export class EnemyManager {
             node.angle = 90;
         }
 
-        const maxHp = getEnemyMaxHp(spec.color, spec.shape);
+        // 基础血量来自颜色+形状，再乘上当前波次的血量倍率
+        const maxHp = scaleEnemyHp(getEnemyMaxHp(spec.color, spec.shape), hpScale);
         const enemy: EnemyData = {
             node,
             color: spec.color,

@@ -1,5 +1,5 @@
 import { Button, Color, Graphics, Label, Node, UITransform, Vec3 } from 'cc';
-import { DESIGN_WIDTH } from './GameConfig';
+import { DESIGN_WIDTH, DifficultyLevel } from './GameConfig';
 
 const HP_BAR_WIDTH = 520;
 const HP_BAR_HEIGHT = 26;
@@ -47,11 +47,16 @@ export class BattleHud {
         }
     }
 
-    /** 刷新波次文案，内容没变就不碰 Label（避免每帧触发重排） */
-    updateStatus(waveCount: number, aliveCount: number): void {
+    /**
+     * 刷新波次文案，内容没变就不碰 Label（避免每帧触发重排）。
+     * 顺带把当前难度摊开显示，方便在预览里直接看出"越往后越难"有没有生效。
+     */
+    updateStatus(waveCount: number, aliveCount: number, difficulty: DifficultyLevel): void {
         if (!this.m_StatusLabel) return;
 
-        const text = waveCount > 0 ? `第 ${waveCount} 波   场上敌人 ${aliveCount}` : '';
+        const text = waveCount > 0
+            ? `第 ${waveCount} 波   敌人 ${aliveCount}   下落 ${difficulty.fallSpeed.toFixed(0)}   血量 x${difficulty.hpScale.toFixed(1)}`
+            : '';
         if (text === this.m_StatusText) return;
 
         this.m_StatusText = text;
