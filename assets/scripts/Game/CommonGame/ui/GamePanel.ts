@@ -56,8 +56,6 @@ export class GamePanel extends UIBase {
     m_BulletCount: number = DefaultTuning.bulletCount;
     @property({ tooltip: '【子弹】子弹飞行速度（像素/秒）' })
     m_BulletSpeed: number = DefaultTuning.bulletSpeed;
-    @property({ tooltip: '【子弹】最多反弹几次就被回收（撞墙和撞敌人都算）。0 = 不限次数，只能飞回玩家身上回收' })
-    m_BulletMaxBounce: number = DefaultTuning.bulletMaxBounce;
     @property({ tooltip: '【子弹】单发子弹伤害' })
     m_BulletDamage: number = DefaultTuning.bulletDamage;
     @property({ tooltip: '【敌人】俯冲玩家的速度（像素/秒）' })
@@ -193,8 +191,6 @@ export class GamePanel extends UIBase {
             bulletDamage: Math.max(1, this.m_BulletDamage),
             fireInterval: Math.max(0.02, this.m_FireInterval),
             bulletCount: Math.max(1, Math.floor(this.m_BulletCount)),
-            // 0 保留为"不限次数"，所以只夹下界
-            bulletMaxBounce: Math.max(0, Math.floor(this.m_BulletMaxBounce)),
             diveSpeed: Math.max(1, this.m_DiveSpeed),
             diveDamage: Math.max(0, this.m_DiveDamage),
             diveHitRadius: Math.max(1, this.m_DiveHitRadius),

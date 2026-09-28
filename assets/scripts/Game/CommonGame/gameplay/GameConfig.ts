@@ -145,12 +145,6 @@ export interface GameTuning {
      * 只有飞回玩家身上才回收，所以这个数就是玩家的"弹药上限"。
      */
     bulletCount: number;
-    /**
-     * 子弹最多反弹几次就被回收（撞墙壁和撞敌人都算一次）。
-     * 这是"飞回玩家身上才回收"之外的安全阀：翅膀硬了飞不回来的子弹不会永久占着弹匣。
-     * <= 0 表示不限次数。
-     */
-    bulletMaxBounce: number;
     /** 敌人俯冲玩家的速度（像素/秒） */
     diveSpeed: number;
     /** 俯冲命中玩家扣的血量 */
@@ -192,7 +186,6 @@ export const DefaultTuning: GameTuning = {
     bulletDamage: 5,
     fireInterval: 0.5,
     bulletCount: 5,
-    bulletMaxBounce: 5,
     diveSpeed: 700,
     diveDamage: 20,
     diveHitRadius: 45,

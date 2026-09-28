@@ -1914,7 +1914,6 @@
     "m_FireInterval": 0.35,
     "m_BulletCount": 5,
     "m_BulletSpeed": 900,
-    "m_BulletMaxBounce": 5,
     "m_BulletDamage": 10,
     "m_DiveSpeed": 700,
     "m_DiveDamage": 20,

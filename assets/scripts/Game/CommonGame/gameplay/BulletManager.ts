@@ -8,6 +8,13 @@ const MAX_SUBSTEP_DISTANCE = 8;
 const MAX_SUBSTEP_COUNT = 16;
 const RAD_TO_DEG = 180 / Math.PI;
 
+/** bounceOffWalls 的返回值：这一小步撞到了哪几面墙（角上同时撞两面时两位都置） */
+const WALL_NONE = 0;
+const WALL_LEFT = 1;
+const WALL_RIGHT = 2;
+const WALL_TOP = 4;
+const WALL_BOTTOM = 8;
+
 export interface BulletData {
     node: Node;
     /** 速度向量，反弹改的就是它 */
@@ -17,8 +24,12 @@ export interface BulletData {
     radius: number;
     /** 离开玩家碰撞范围之后才允许回收，否则刚出膛就被收回去了 */
     armed: boolean;
-    /** 已经反弹了几次（撞墙壁 / 撞敌人各算一次），到上限就回收 */
-    bounceCount: number;
+    /**
+     * 是否处于【回身】状态：锁定玩家飞回去，碰到玩家才回收，
+     * 触发条件只有一个 —— 撞到屏幕底边（见 turnReturning）。
+     * 回身期间穿过敌人、不结算伤害（见 update 里的说明）。
+     */
+    returning: boolean;
 }
 
 /**
@@ -28,8 +39,9 @@ export interface BulletData {
  * 飞回玩家身上才回收，所以玩家的开火节奏很大程度上由子弹什么时候飞回来决定，
  * 场上没有剩余子弹时打不出去。
  *
- * 另外还有一道保险：同一发子弹反弹满 bulletMaxBounce 次也会被回收，
- * 免得飞不回玩家身上的子弹永久占着弹匣。
+ * 镜面反射本身不保证子弹能回得来（斜着打出去会一直在墙角之间折返），
+ * 所以有一条回家的规则：子弹撞到屏幕【底边】就转为【回身】状态，
+ * 锁定玩家直飞回去，命中玩家才回收 —— 球落到地上，就该滚回玩家手里。
  */
 export class BulletManager {
     private m_Parent: Node = null;
@@ -104,7 +116,7 @@ export class BulletManager {
             vy: unitY * speed,
             radius: this.m_Radius,
             armed: false,
-            bounceCount: 0,
+            returning: false,
         });
         return true;
     }
@@ -137,15 +149,19 @@ export class BulletManager {
             const recycleReach = playerRadius + bullet.radius;
 
             for (let s = 0; s < stepCount; s++) {
-                const pos = bullet.node.position;
-                bullet.node.setPosition(pos.x + bullet.vx * step, pos.y + bullet.vy * step, 0);
+                this.stepBullet(bullet, step, playerPos);
 
-                // 一次小步里最多算一次反弹（角上同时撞两面墙也只算一次）
-                let bounced = this.bounceOffWalls(bullet);
-                if (this.hitEnemy(bullet, enemies, onEnemyHit)) bounced = true;
+                const walls = this.bounceOffWalls(bullet);
+                // 回身中的子弹【穿过敌人】：既不结算伤害也不被弹开。
+                // 一是"必定回身"——不能被半路挡下来；二是 reflectOffEnemy 的推出
+                // 正是防止一次碰撞被重复结算的那道保险，回身时不做推出的话，
+                // 子弹会卡在敌人身体里每个小步扣一次血（一帧最多 16 次）。
+                if (!bullet.returning) this.hitEnemy(bullet, enemies, onEnemyHit);
 
-                // 弹满次数就收掉，节点已经销毁，后面的回收判断不能再跑
-                if (bounced && this.consumeBounce(bullet)) break;
+                // 撞到屏幕底边就回身：球落到地上，就该滚回玩家手里。
+                // 顶墙、左右墙、撞敌人都只反弹不回身。
+                if ((walls & WALL_BOTTOM) !== 0) this.turnReturning(bullet);
+
                 if (this.tryRecycle(bullet, playerPos, recycleReach)) break;
             }
 
@@ -162,60 +178,87 @@ export class BulletManager {
     }
 
     /**
-     * 撞到屏幕四周就反弹，并把子弹推回边界内。返回 true 表示这一小步里确实弹了。
+     * 撞到屏幕四周就反弹，并把子弹推回边界内。返回这一小步撞到了哪几面墙（WALL_* 位标志）。
      *
      * 就是标准的镜面反射：只翻转撞到那条轴的速度分量。
+     * 之所以要把"撞的是哪面墙"报出来，是因为【底边】有特殊含义 —— 见 turnReturning。
      */
-    private bounceOffWalls(bullet: BulletData): boolean {
+    private bounceOffWalls(bullet: BulletData): number {
         const pos = bullet.node.position;
         const limitX = DESIGN_WIDTH * 0.5 - bullet.radius;
         const limitY = DESIGN_HEIGHT * 0.5 - bullet.radius;
 
+        let walls = WALL_NONE;
         let x = pos.x;
         let y = pos.y;
         if (x < -limitX) {
             x = -limitX;
             bullet.vx = Math.abs(bullet.vx);
+            walls |= WALL_LEFT;
         } else if (x > limitX) {
             x = limitX;
             bullet.vx = -Math.abs(bullet.vx);
+            walls |= WALL_RIGHT;
         }
         if (y < -limitY) {
             y = -limitY;
             bullet.vy = Math.abs(bullet.vy);
+            walls |= WALL_BOTTOM;
         } else if (y > limitY) {
             y = limitY;
             bullet.vy = -Math.abs(bullet.vy);
+            walls |= WALL_TOP;
         }
 
-        if (x === pos.x && y === pos.y) return false;
+        if (walls === WALL_NONE) return WALL_NONE;
         bullet.node.setPosition(x, y, 0);
-        return true;
+        return walls;
     }
 
     /**
-     * 记一次反弹，返回 true 表示这发子弹已经弹满次数、被回收了（调用方必须立刻停下来）。
+     * 转入【回身】：从这一刻起锁定玩家直飞回去，碰到玩家才回收。
+     * 唯一的触发点是撞到屏幕底边。重复调用是安全的（两个标志位都是幂等的）。
      *
-     * 撞完才回收：第 N 次的反弹和伤害都照常发生，之后子弹才消失，
-     * 所以"最多反弹 5 次"= 第 5 次反弹结束后回收。
+     * armed 必须一起置位。回身 = 正在回家，从这一刻起就该允许回收；
+     * 不置这一位的话，万一子弹是在玩家捕捉圈【内】转回身的（撞底边时完全可能，
+     * 底边到玩家的距离和捕捉半径是一个量级），它会贴着玩家打转、
+     * 永远等不到 armed，也就永远回收不掉。
      */
-    private consumeBounce(bullet: BulletData): boolean {
-        bullet.bounceCount++;
-
-        const limit = Math.floor(this.m_Tuning.bulletMaxBounce);
-        if (limit <= 0) return false;   // <=0 不限次数，只记数不回收
-        if (bullet.bounceCount < limit) return false;
-
-        this.recycle(bullet);
-        return true;
+    private turnReturning(bullet: BulletData): void {
+        bullet.returning = true;
+        bullet.armed = true;
     }
 
-    /** 撞到敌人：扣血 + 沿穿透更浅的那条轴弹开，子弹本身不消失；返回 true 表示撞上了 */
+    /**
+     * 推进一步。普通子弹沿当前速度直线走；回身中的子弹每个小步都重新锁定玩家，
+     * 所以玩家一边移动也不会 miss —— 这正是"必定回身"的实现。
+     *
+     * 玩家一定在子弹可达区域内部（玩家的活动范围比子弹的反弹边界更小），
+     * 所以两点之间的直线不会碰墙，回身途中不需要额外处理边界。
+     */
+    private stepBullet(bullet: BulletData, step: number, playerPos: Readonly<{ x: number; y: number }>): void {
+        const pos = bullet.node.position;
+
+        if (bullet.returning) {
+            const dx = playerPos.x - pos.x;
+            const dy = playerPos.y - pos.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > 1e-6) {
+                const speed = Math.max(1, this.m_Tuning.bulletSpeed);
+                bullet.vx = (dx / distance) * speed;
+                bullet.vy = (dy / distance) * speed;
+            }
+        }
+
+        bullet.node.setPosition(pos.x + bullet.vx * step, pos.y + bullet.vy * step, 0);
+    }
+
+    /** 撞到敌人：扣血 + 沿穿透更浅的那条轴弹开，子弹本身不消失 */
     private hitEnemy(
         bullet: BulletData,
         enemies: EnemyData[],
         onEnemyHit: (enemy: EnemyData, damage: number) => void,
-    ): boolean {
+    ): void {
         const pos = bullet.node.position;
 
         for (const enemy of enemies) {
@@ -231,10 +274,8 @@ export class BulletManager {
             // 一步只处理一次碰撞：已经弹出去了，再判下去没有意义。
             // 这里必须立刻 return —— onEnemyHit 可能当场把敌人从 enemies 数组里摘掉，
             // 继续遍历这个数组就是在"边遍历边删"。
-            return true;
+            return;
         }
-
-        return false;
     }
 
     private reflectOffEnemy(bullet: BulletData, enemy: EnemyData, overlapX: number, overlapY: number): void {
