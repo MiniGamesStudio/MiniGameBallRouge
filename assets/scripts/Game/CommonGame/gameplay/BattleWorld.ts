@@ -28,6 +28,10 @@ export interface BattleCallbacks {
      *
      * 【可选】：不传就完全没有升级流程（验证脚本就是这么跑的），
      * 那时候连队列都不排，免得堆出一个永远没人消费的待办。
+     *
+     * 【开局那一波不会触发】：第一波只是把敌人放出来，让玩家先打一会儿，
+     * 从第 2 波起才每波升 1 级。
+     *
      * 暂停不由这里负责 —— 谁开面板谁负责冻结（见 GamePanel.m_IsPaused）。
      */
     onLevelUp?: (levels: Readonly<SkillLevels>) => void;
@@ -114,18 +118,24 @@ export class BattleWorld {
         this.m_Hud.updateHp(this.m_Player.hp, this.m_Player.maxHp);
 
         // 开局立刻来一波，不必等第一个 waveInterval。
-        // 它同时也会记下第一级 —— 第一波也是"新的一波"
-        this.startWave();
+        // 这一波【不给】升级：玩家还没看清棋盘就被面板按住，什么都还没打就选技能
+        this.startWave(false);
         this.m_Started = true;
     }
 
     /**
-     * 开一波，并记下一次升级。
+     * 开一波。
      *
      * generateWave 的唯一调用点，这样"每波升 1 级"不会漏也不会重。
+     *
+     * grantLevel=false 只用于开局那一波：第一波不给升级，从第 2 波起才每波 1 级。
+     * 用参数而不是"数第几波"来判断 —— 两个调用点的意图直接写在调用处，
+     * 不用回头推 m_Enemies.waveCount 当时是多少。
      */
-    private startWave(): void {
+    private startWave(grantLevel: boolean): void {
         this.m_Enemies.generateWave();
+        if (!grantLevel) return;
+
         this.m_Skills.gainLevel();
         // 没人监听就不排队：否则计数一直涨着，"有待选技能"会永远为真
         if (!this.m_Callbacks?.onLevelUp) return;
@@ -251,7 +261,7 @@ export class BattleWorld {
         const interval = Math.max(1, this.m_Tuning.waveInterval);
         if (this.m_WaveTimer >= interval) {
             this.m_WaveTimer -= interval;
-            this.startWave();
+            this.startWave(true);
         }
 
         if (this.m_Enemies.pendingRowCount <= 0) return;

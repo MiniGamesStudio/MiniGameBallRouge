@@ -1409,7 +1409,7 @@
       "time": 1790569024320.3547
     },
     "scripts\\Game\\CommonGame\\gameplay": {
-      "time": 1790587734445.8794,
+      "time": 1790589843614.888,
       "uuid": "41e264c4-2544-493a-ba47-8d5aa7b1de4e"
     },
     "scripts\\Game\\CommonGame\\gameplay\\BattleHud.ts": {
@@ -1417,7 +1417,7 @@
       "uuid": "ec58925b-1e16-4f2a-857e-dd51b3758e69"
     },
     "scripts\\Game\\CommonGame\\gameplay\\BattleWorld.ts": {
-      "time": 1790586729402.0818,
+      "time": 1790589842693.7,
       "uuid": "bff72538-1c41-47e9-9220-9e5165d431e2"
     },
     "scripts\\Game\\CommonGame\\gameplay\\EnemyManager.ts": {
