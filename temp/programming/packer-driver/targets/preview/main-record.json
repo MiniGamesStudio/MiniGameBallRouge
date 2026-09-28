@@ -514,7 +514,7 @@
       ]
     },
     "cce:/internal/x/prerequisite-imports": {
-      "mTimestamp": 11145489.5043,
+      "mTimestamp": 13153387.0991,
       "chunkId": "6d8fd2b0177941b032ddc0733af48a561fb60657",
       "imports": [
         {
@@ -27753,7 +27753,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/GamePanel.ts": {
       "mTimestamp": {
-        "mtime": 1790572492844.713,
+        "mtime": 1790574687715.3347,
         "uuid": "0f6f935e-dd32-4f8f-870f-858c31678dec"
       },
       "chunkId": "895e1396d894162089e6130ded2b186ffb39fb45",
@@ -30865,7 +30865,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/GameConfig.ts": {
       "mTimestamp": {
-        "mtime": 1790572378226.9888,
+        "mtime": 1790575093896.2234,
         "uuid": "1bf4dab4-a24b-4d7d-88f5-8a7a0d6da8a8"
       },
       "chunkId": "f4996fe77677035eaac24fa083b4ff1de0590ed1",
@@ -31165,7 +31165,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BulletManager.ts": {
       "mTimestamp": {
-        "mtime": 1790572604586.813,
+        "mtime": 1790574812798.3677,
         "uuid": "23f2184c-4456-49b0-a86c-c68e366eeff6"
       },
       "chunkId": "f4643bc800135f9741164f76f9468385f3121d9a",

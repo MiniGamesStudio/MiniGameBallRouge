@@ -775,7 +775,7 @@
       "uuid": "73edaae5-0b7a-425f-afe0-f601833012aa"
     },
     "scripts\\Game\\CommonGame\\ui": {
-      "time": 1790572492880.7107,
+      "time": 1790574688800.5378,
       "uuid": "191bdeae-9286-465e-a518-a494dbf87eba"
     },
     "scripts\\Game\\CommonGame\\CommonGameEntry.ts": {
@@ -819,7 +819,7 @@
       "time": 1790561775937.0703
     },
     "scripts\\Game\\CommonGame\\ui\\GamePanel.ts": {
-      "time": 1790572492844.713,
+      "time": 1790574687715.3347,
       "uuid": "0f6f935e-dd32-4f8f-870f-858c31678dec"
     },
     "scripts\\Game\\CommonGame\\level.meta": {
@@ -1451,7 +1451,7 @@
       "time": 1790569024320.3547
     },
     "scripts\\Game\\CommonGame\\gameplay": {
-      "time": 1790573087643.5251,
+      "time": 1790574813056.428,
       "uuid": "41e264c4-2544-493a-ba47-8d5aa7b1de4e"
     },
     "scripts\\Game\\CommonGame\\gameplay\\BattleHud.ts": {
@@ -1467,7 +1467,7 @@
       "uuid": "c7a56075-baae-4a3b-b2ac-523019989a1f"
     },
     "scripts\\Game\\CommonGame\\gameplay\\GameConfig.ts": {
-      "time": 1790572378226.9888,
+      "time": 1790575093896.2234,
       "uuid": "1bf4dab4-a24b-4d7d-88f5-8a7a0d6da8a8"
     },
     "scripts\\Game\\CommonGame\\gameplay\\PlayerController.ts": {
@@ -1485,7 +1485,7 @@
       "time": 1790573087648.5237
     },
     "scripts\\Game\\CommonGame\\gameplay\\BulletManager.ts": {
-      "time": 1790572604586.813,
+      "time": 1790574812798.3677,
       "uuid": "23f2184c-4456-49b0-a86c-c68e366eeff6"
     }
   },

@@ -79,16 +79,16 @@ export const ALL_GAMEPLAY_ASSETS: string[] = [
 
 /** 单格敌人血量 */
 export const SingleHpByColor: Record<EnemyColor, number> = {
-    [EnemyColor.Green]: 10,
-    [EnemyColor.Blue]: 20,
-    [EnemyColor.Red]: 40,
+    [EnemyColor.Green]: 20,
+    [EnemyColor.Blue]: 40,
+    [EnemyColor.Red]: 60,
 };
 
 /** double 敌人的【每格】血量，均高于同色 single；总量为每格的两倍 */
 export const DoubleHpPerCellByColor: Record<EnemyColor, number> = {
-    [EnemyColor.Green]: 15,
-    [EnemyColor.Blue]: 30,
-    [EnemyColor.Red]: 60,
+    [EnemyColor.Green]: 30,
+    [EnemyColor.Blue]: 50,
+    [EnemyColor.Red]: 80,
 };
 
 /** 敌人总血量：single 占一格，double 占两格 */
@@ -143,6 +143,18 @@ export interface GameTuning {
      * 只有飞回玩家身上才回收，所以这个数就是玩家的"弹药上限"。
      */
     bulletCount: number;
+    /**
+     * 击中敌人时的反弹偏转角（度）。反射方向上再偏这么多，子弹不会沿原路返回、
+     * 而是在敌阵里散开。撞屏幕四周仍是镜面反射、不偏转 —— 见 BulletManager.bounceOffWalls。
+     * 0 = 全部按标准镜面反射。
+     */
+    bulletBounceAngle: number;
+    /**
+     * 子弹最多反弹几次就被回收（撞墙壁和撞敌人都算一次）。
+     * 这是"飞回玩家身上才回收"之外的安全阀：翅膀硬了飞不回来的子弹不会永久占着弹匣。
+     * <= 0 表示不限次数。
+     */
+    bulletMaxBounce: number;
     /** 敌人俯冲玩家的速度（像素/秒） */
     diveSpeed: number;
     /** 俯冲命中玩家扣的血量 */
@@ -168,7 +180,9 @@ export const DefaultTuning: GameTuning = {
     bulletSpeed: 900,
     bulletDamage: 10,
     fireInterval: 0.35,
-    bulletCount: 8,
+    bulletCount: 5,
+    bulletBounceAngle: 15,
+    bulletMaxBounce: 3,
     diveSpeed: 700,
     diveDamage: 20,
     diveHitRadius: 45,
