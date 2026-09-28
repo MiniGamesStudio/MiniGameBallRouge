@@ -5478,37 +5478,27 @@
   },
   "763aeaf5-62e5-495e-b79d-55cc461b62f0": {
     "url": "db://assets/subpackages/game/texture/game_chiken.png",
-    "value": {
-      "depends": []
-    },
+    "value": {},
     "versionCode": 1
   },
   "a0c02293-77b4-498d-a11f-e9055b752554": {
     "url": "db://assets/subpackages/game/texture/game_cow.png",
-    "value": {
-      "depends": []
-    },
+    "value": {},
     "versionCode": 1
   },
   "2a106bcf-9ef4-4710-b0a6-d5cec632f56a": {
     "url": "db://assets/subpackages/game/texture/game_pig.png",
-    "value": {
-      "depends": []
-    },
+    "value": {},
     "versionCode": 1
   },
   "d96bf0c8-7dae-4839-8488-e09aa1488a0c": {
     "url": "db://assets/subpackages/game/texture/game_pig2.png",
-    "value": {
-      "depends": []
-    },
+    "value": {},
     "versionCode": 1
   },
   "e631350a-8fc6-4daa-a829-e51aebdfd5cf": {
     "url": "db://assets/subpackages/game/texture/game_sheep.png",
-    "value": {
-      "depends": []
-    },
+    "value": {},
     "versionCode": 1
   },
   "a0c02293-77b4-498d-a11f-e9055b752554@6c48a": {
@@ -5923,6 +5913,36 @@
   },
   "23f2184c-4456-49b0-a86c-c68e366eeff6": {
     "url": "db://assets/scripts/Game/CommonGame/gameplay/BulletManager.ts",
+    "value": {},
+    "versionCode": 1
+  },
+  "b64a7a12-62ac-4080-ad8d-3dd99df06c6f": {
+    "url": "db://assets/subpackages/game/texture/game_cursor.png",
+    "value": {
+      "depends": []
+    },
+    "versionCode": 1
+  },
+  "b64a7a12-62ac-4080-ad8d-3dd99df06c6f@6c48a": {
+    "url": "db://assets/subpackages/game/texture/game_cursor.png@6c48a",
+    "value": {
+      "depends": [
+        "b64a7a12-62ac-4080-ad8d-3dd99df06c6f"
+      ]
+    },
+    "versionCode": 1
+  },
+  "b64a7a12-62ac-4080-ad8d-3dd99df06c6f@f9941": {
+    "url": "db://assets/subpackages/game/texture/game_cursor.png@f9941",
+    "value": {
+      "depends": [
+        "b64a7a12-62ac-4080-ad8d-3dd99df06c6f@6c48a"
+      ]
+    },
+    "versionCode": 1
+  },
+  "1353b1b1-d6b2-43ec-b0ac-b2687e4d5e85": {
+    "url": "db://assets/scripts/Game/CommonGame/gameplay/AimCursor.ts",
     "value": {},
     "versionCode": 1
   }

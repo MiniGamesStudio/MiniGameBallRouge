@@ -1,21 +1,21 @@
 {
   "__type__": "cc.SpriteFrame",
   "content": {
-    "name": "game_chiken",
+    "name": "game_cursor",
     "atlas": "",
     "rect": {
-      "x": 2,
+      "x": 0,
       "y": 0,
-      "width": 46,
-      "height": 50
+      "width": 40,
+      "height": 56
     },
     "offset": {
       "x": 0,
       "y": 0
     },
     "originalSize": {
-      "width": 50,
-      "height": 50
+      "width": 40,
+      "height": 56
     },
     "rotated": false,
     "capInsets": [
@@ -26,17 +26,17 @@
     ],
     "vertices": {
       "rawPosition": [
-        -23,
-        -25,
+        -20,
+        -28,
         0,
-        23,
-        -25,
+        20,
+        -28,
         0,
-        -23,
-        25,
+        -20,
+        28,
         0,
-        23,
-        25,
+        20,
+        28,
         0
       ],
       "indexes": [
@@ -48,37 +48,37 @@
         3
       ],
       "uv": [
-        2,
-        50,
-        48,
-        50,
-        2,
         0,
-        48,
+        56,
+        40,
+        56,
+        0,
+        0,
+        40,
         0
       ],
       "nuv": [
-        0.04,
         0,
-        0.96,
         0,
-        0.04,
         1,
-        0.96,
+        0,
+        0,
+        1,
+        1,
         1
       ],
       "minPos": {
-        "x": -23,
-        "y": -25,
+        "x": -20,
+        "y": -28,
         "z": 0
       },
       "maxPos": {
-        "x": 23,
-        "y": 25,
+        "x": 20,
+        "y": 28,
         "z": 0
       }
     },
-    "texture": "763aeaf5-62e5-495e-b79d-55cc461b62f0@6c48a",
+    "texture": "b64a7a12-62ac-4080-ad8d-3dd99df06c6f@6c48a",
     "packable": true,
     "pixelsToUnit": 100,
     "pivot": {

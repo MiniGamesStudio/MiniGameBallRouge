@@ -775,7 +775,7 @@
       "uuid": "73edaae5-0b7a-425f-afe0-f601833012aa"
     },
     "scripts\\Game\\CommonGame\\ui": {
-      "time": 1790574688800.5378,
+      "time": 1790576081541.3462,
       "uuid": "191bdeae-9286-465e-a518-a494dbf87eba"
     },
     "scripts\\Game\\CommonGame\\CommonGameEntry.ts": {
@@ -819,7 +819,7 @@
       "time": 1790561775937.0703
     },
     "scripts\\Game\\CommonGame\\ui\\GamePanel.ts": {
-      "time": 1790574687715.3347,
+      "time": 1790576080838.104,
       "uuid": "0f6f935e-dd32-4f8f-870f-858c31678dec"
     },
     "scripts\\Game\\CommonGame\\level.meta": {
@@ -943,7 +943,7 @@
       "uuid": "c30cc32b-cb89-4481-b103-8f9095104ac8"
     },
     "subpackages\\game\\texture": {
-      "time": 1790566411063.1387,
+      "time": 1790575599826.279,
       "uuid": "dbdbb2c4-2818-4a64-9df1-b1a9ac920201"
     },
     "subpackages\\game\\ui": {
@@ -1014,7 +1014,7 @@
       "uuid": "fc8553d7-131b-4691-98e7-6ceeaa07a1c7"
     },
     "subpackages\\game\\ui\\GamePanel.prefab": {
-      "time": 1790566307724.8616,
+      "time": 1790577660510.3318,
       "uuid": "6c6bb7e7-df76-4af4-a1dc-2a97a7ff0c23"
     },
     "subpackages\\game\\ui\\PausePanel.prefab": {
@@ -1306,41 +1306,6 @@
     "subpackages\\game\\texture\\xiaoji.png.meta": {
       "time": 1785760609081.948
     },
-    "subpackages\\game\\texture\\game_chiken.png": {
-      "time": 1790561775964.0684,
-      "uuid": "763aeaf5-62e5-495e-b79d-55cc461b62f0"
-    },
-    "subpackages\\game\\texture\\game_cow.png": {
-      "time": 1790561775964.0684,
-      "uuid": "a0c02293-77b4-498d-a11f-e9055b752554"
-    },
-    "subpackages\\game\\texture\\game_pig.png": {
-      "time": 1790561775964.0684,
-      "uuid": "2a106bcf-9ef4-4710-b0a6-d5cec632f56a"
-    },
-    "subpackages\\game\\texture\\game_pig2.png": {
-      "time": 1790561775965.068,
-      "uuid": "d96bf0c8-7dae-4839-8488-e09aa1488a0c"
-    },
-    "subpackages\\game\\texture\\game_sheep.png": {
-      "time": 1790561775965.068,
-      "uuid": "e631350a-8fc6-4daa-a829-e51aebdfd5cf"
-    },
-    "subpackages\\game\\texture\\game_pig2.png.meta": {
-      "time": 1790561775965.068
-    },
-    "subpackages\\game\\texture\\game_cow.png.meta": {
-      "time": 1790561775964.0684
-    },
-    "subpackages\\game\\texture\\game_pig.png.meta": {
-      "time": 1790561775965.068
-    },
-    "subpackages\\game\\texture\\game_chiken.png.meta": {
-      "time": 1790561775964.0684
-    },
-    "subpackages\\game\\texture\\game_sheep.png.meta": {
-      "time": 1790561775965.068
-    },
     "subpackages\\sound": {
       "time": 1790561775980.5833,
       "uuid": "9e3d8d57-d75d-489b-b7e2-c183c7ef5e83"
@@ -1451,7 +1416,7 @@
       "time": 1790569024320.3547
     },
     "scripts\\Game\\CommonGame\\gameplay": {
-      "time": 1790574813056.428,
+      "time": 1790577334121.9377,
       "uuid": "41e264c4-2544-493a-ba47-8d5aa7b1de4e"
     },
     "scripts\\Game\\CommonGame\\gameplay\\BattleHud.ts": {
@@ -1459,7 +1424,7 @@
       "uuid": "ec58925b-1e16-4f2a-857e-dd51b3758e69"
     },
     "scripts\\Game\\CommonGame\\gameplay\\BattleWorld.ts": {
-      "time": 1790572613876.1875,
+      "time": 1790576070725.0598,
       "uuid": "bff72538-1c41-47e9-9220-9e5165d431e2"
     },
     "scripts\\Game\\CommonGame\\gameplay\\EnemyManager.ts": {
@@ -1467,11 +1432,11 @@
       "uuid": "c7a56075-baae-4a3b-b2ac-523019989a1f"
     },
     "scripts\\Game\\CommonGame\\gameplay\\GameConfig.ts": {
-      "time": 1790575093896.2234,
+      "time": 1790578089920.0256,
       "uuid": "1bf4dab4-a24b-4d7d-88f5-8a7a0d6da8a8"
     },
     "scripts\\Game\\CommonGame\\gameplay\\PlayerController.ts": {
-      "time": 1790572417059.8623,
+      "time": 1790575998418.62,
       "uuid": "67f27f11-0b83-418f-8d12-b4712f69e629"
     },
     "scripts\\Game\\CommonGame\\gameplay\\HitFlash.ts.meta": {
@@ -1485,8 +1450,22 @@
       "time": 1790573087648.5237
     },
     "scripts\\Game\\CommonGame\\gameplay\\BulletManager.ts": {
-      "time": 1790574812798.3677,
+      "time": 1790575926676.9612,
       "uuid": "23f2184c-4456-49b0-a86c-c68e366eeff6"
+    },
+    "subpackages\\game\\texture\\game_cursor.png.meta": {
+      "time": 1790575568681.0242
+    },
+    "subpackages\\game\\texture\\game_cursor.png": {
+      "time": 1790575549310.0747,
+      "uuid": "b64a7a12-62ac-4080-ad8d-3dd99df06c6f"
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\AimCursor.ts.meta": {
+      "time": 1790577334127.94
+    },
+    "scripts\\Game\\CommonGame\\gameplay\\AimCursor.ts": {
+      "time": 1790575888251.3228,
+      "uuid": "1353b1b1-d6b2-43ec-b0ac-b2687e4d5e85"
     }
   },
   "missing": {}

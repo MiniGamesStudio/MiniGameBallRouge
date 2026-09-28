@@ -102,11 +102,6 @@
             "subpackages\\game\\texture\\diban.png",
             "subpackages\\game\\texture\\fanpai_icon.png",
             "subpackages\\game\\texture\\fanpai_title.png",
-            "subpackages\\game\\texture\\game_chiken.png",
-            "subpackages\\game\\texture\\game_cow.png",
-            "subpackages\\game\\texture\\game_pig.png",
-            "subpackages\\game\\texture\\game_pig2.png",
-            "subpackages\\game\\texture\\game_sheep.png",
             "subpackages\\game\\texture\\pause_title.png",
             "subpackages\\game\\texture\\PictoIcon_Close.png",
             "subpackages\\game\\texture\\rank_diban.png",
@@ -140,7 +135,9 @@
             "scripts\\Game\\CommonGame\\gameplay\\GameConfig.ts",
             "scripts\\Game\\CommonGame\\gameplay\\PlayerController.ts",
             "scripts\\Game\\CommonGame\\gameplay\\HitFlash.ts",
-            "scripts\\Game\\CommonGame\\gameplay\\BulletManager.ts"
+            "scripts\\Game\\CommonGame\\gameplay\\BulletManager.ts",
+            "subpackages\\game\\texture\\game_cursor.png",
+            "scripts\\Game\\CommonGame\\gameplay\\AimCursor.ts"
         ]
     }
 }

@@ -55,6 +55,7 @@ const AssetNameByColor: Record<EnemyColor, { single: string; double: string }> =
 
 export const PLAYER_ASSET = 'game_player';
 export const BULLET_ASSET = 'game_bullet';
+export const CURSOR_ASSET = 'game_cursor';
 
 /** 敌人颜色 -> 图片名 */
 export function getEnemyAssetName(color: EnemyColor, shape: EnemyShape): string {
@@ -71,6 +72,7 @@ export function toSpriteFramePath(assetName: string): string {
 export const ALL_GAMEPLAY_ASSETS: string[] = [
     PLAYER_ASSET,
     BULLET_ASSET,
+    CURSOR_ASSET,
     ...Object.keys(AssetNameByColor).reduce<string[]>((names, key) => {
         const entry = AssetNameByColor[key as unknown as EnemyColor];
         return names.concat(entry.single, entry.double);
@@ -144,12 +146,6 @@ export interface GameTuning {
      */
     bulletCount: number;
     /**
-     * 击中敌人时的反弹偏转角（度）。反射方向上再偏这么多，子弹不会沿原路返回、
-     * 而是在敌阵里散开。撞屏幕四周仍是镜面反射、不偏转 —— 见 BulletManager.bounceOffWalls。
-     * 0 = 全部按标准镜面反射。
-     */
-    bulletBounceAngle: number;
-    /**
      * 子弹最多反弹几次就被回收（撞墙壁和撞敌人都算一次）。
      * 这是"飞回玩家身上才回收"之外的安全阀：翅膀硬了飞不回来的子弹不会永久占着弹匣。
      * <= 0 表示不限次数。
@@ -172,17 +168,16 @@ export interface GameTuning {
 }
 
 export const DefaultTuning: GameTuning = {
-    waveInterval: 30,
-    waveRowMin: 5,
-    waveRowMax: 10,
+    waveInterval: 20,
+    waveRowMin: 10,
+    waveRowMax: 20,
     rowSpawnInterval: 0.5,
     enemyFallSpeed: 27,
-    bulletSpeed: 900,
-    bulletDamage: 10,
-    fireInterval: 0.35,
+    bulletSpeed: 700,
+    bulletDamage: 5,
+    fireInterval: 0.5,
     bulletCount: 5,
-    bulletBounceAngle: 15,
-    bulletMaxBounce: 3,
+    bulletMaxBounce: 5,
     diveSpeed: 700,
     diveDamage: 20,
     diveHitRadius: 45,

@@ -751,7 +751,7 @@
       "__id__": 17
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 29
@@ -999,7 +999,7 @@
       "__id__": 17
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 39
@@ -1247,7 +1247,7 @@
       "__id__": 17
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 49
@@ -1495,7 +1495,7 @@
       "__id__": 17
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 59
@@ -1906,6 +1906,23 @@
     "m_DesignWidth": 750,
     "m_DesignHeight": 1334,
     "m_GameRootMaxScale": 1,
+    "m_WaveInterval": 30,
+    "m_WaveRowMin": 5,
+    "m_WaveRowMax": 10,
+    "m_RowSpawnInterval": 0.5,
+    "m_EnemyFallSpeed": 27,
+    "m_FireInterval": 0.35,
+    "m_BulletCount": 5,
+    "m_BulletSpeed": 900,
+    "m_BulletMaxBounce": 5,
+    "m_BulletDamage": 10,
+    "m_DiveSpeed": 700,
+    "m_DiveDamage": 20,
+    "m_DiveHitRadius": 45,
+    "m_EnemyAttackRange": 110,
+    "m_EnemyAttackInterval": 1,
+    "m_EnemyAttackDamage": 5,
+    "m_PlayerMaxHp": 100,
     "_id": ""
   },
   {

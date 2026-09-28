@@ -997,7 +997,7 @@
       ]
     },
     "cce:/internal/x/prerequisite-imports": {
-      "mTimestamp": 13153280.292,
+      "mTimestamp": 16150155.7338,
       "chunkId": "6d8fd2b0177941b032ddc0733af48a561fb60657",
       "imports": [
         {
@@ -1127,7 +1127,7 @@
           }
         },
         {
-          "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BattleHud.ts",
+          "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/AimCursor.ts",
           "resolved": "__unresolved_9",
           "loc": {
             "start": {
@@ -1141,7 +1141,7 @@
           }
         },
         {
-          "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BattleWorld.ts",
+          "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BattleHud.ts",
           "resolved": "__unresolved_10",
           "loc": {
             "start": {
@@ -1150,213 +1150,213 @@
             },
             "end": {
               "line": 5,
-              "column": 1572
+              "column": 1570
+            }
+          }
+        },
+        {
+          "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BattleWorld.ts",
+          "resolved": "__unresolved_11",
+          "loc": {
+            "start": {
+              "line": 5,
+              "column": 1586
+            },
+            "end": {
+              "line": 5,
+              "column": 1695
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BulletManager.ts",
-          "resolved": "__unresolved_11",
+          "resolved": "__unresolved_12",
           "loc": {
             "start": {
               "line": 5,
-              "column": 1588
+              "column": 1711
             },
             "end": {
               "line": 5,
-              "column": 1699
+              "column": 1822
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/EnemyManager.ts",
-          "resolved": "__unresolved_12",
+          "resolved": "__unresolved_13",
           "loc": {
             "start": {
               "line": 5,
-              "column": 1715
+              "column": 1838
             },
             "end": {
               "line": 5,
-              "column": 1825
+              "column": 1948
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/GameConfig.ts",
-          "resolved": "__unresolved_13",
+          "resolved": "__unresolved_14",
           "loc": {
             "start": {
               "line": 5,
-              "column": 1841
+              "column": 1964
             },
             "end": {
               "line": 5,
-              "column": 1949
+              "column": 2072
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/HitFlash.ts",
-          "resolved": "__unresolved_14",
+          "resolved": "__unresolved_15",
           "loc": {
             "start": {
               "line": 5,
-              "column": 1965
+              "column": 2088
             },
             "end": {
               "line": 5,
-              "column": 2071
+              "column": 2194
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/PlayerController.ts",
-          "resolved": "__unresolved_15",
+          "resolved": "__unresolved_16",
           "loc": {
             "start": {
               "line": 5,
-              "column": 2087
+              "column": 2210
             },
             "end": {
               "line": 5,
-              "column": 2201
+              "column": 2324
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/shader/PixelMonsterSprite.ts",
-          "resolved": "__unresolved_16",
+          "resolved": "__unresolved_17",
           "loc": {
             "start": {
               "line": 5,
-              "column": 2217
+              "column": 2340
             },
             "end": {
               "line": 5,
-              "column": 2331
+              "column": 2454
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/AdPanel.ts",
-          "resolved": "__unresolved_17",
+          "resolved": "__unresolved_18",
           "loc": {
             "start": {
               "line": 5,
-              "column": 2347
+              "column": 2470
             },
             "end": {
               "line": 5,
-              "column": 2446
+              "column": 2569
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/GamePanel.ts",
-          "resolved": "__unresolved_18",
+          "resolved": "__unresolved_19",
           "loc": {
             "start": {
               "line": 5,
-              "column": 2462
+              "column": 2585
             },
             "end": {
               "line": 5,
-              "column": 2563
+              "column": 2686
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/LoadingPanel.ts",
-          "resolved": "__unresolved_19",
+          "resolved": "__unresolved_20",
           "loc": {
             "start": {
               "line": 5,
-              "column": 2579
+              "column": 2702
             },
             "end": {
               "line": 5,
-              "column": 2683
+              "column": 2806
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/LoginPanel.ts",
-          "resolved": "__unresolved_20",
+          "resolved": "__unresolved_21",
           "loc": {
             "start": {
               "line": 5,
-              "column": 2699
+              "column": 2822
             },
             "end": {
               "line": 5,
-              "column": 2801
+              "column": 2924
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/MainPage.ts",
-          "resolved": "__unresolved_21",
+          "resolved": "__unresolved_22",
           "loc": {
             "start": {
               "line": 5,
-              "column": 2817
+              "column": 2940
             },
             "end": {
               "line": 5,
-              "column": 2917
+              "column": 3040
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/MainPanel.ts",
-          "resolved": "__unresolved_22",
+          "resolved": "__unresolved_23",
           "loc": {
             "start": {
               "line": 5,
-              "column": 2933
+              "column": 3056
             },
             "end": {
               "line": 5,
-              "column": 3034
+              "column": 3157
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/PausePanel.ts",
-          "resolved": "__unresolved_23",
+          "resolved": "__unresolved_24",
           "loc": {
             "start": {
               "line": 5,
-              "column": 3050
+              "column": 3173
             },
             "end": {
               "line": 5,
-              "column": 3152
+              "column": 3275
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/RankPanel.ts",
-          "resolved": "__unresolved_24",
-          "loc": {
-            "start": {
-              "line": 5,
-              "column": 3168
-            },
-            "end": {
-              "line": 5,
-              "column": 3269
-            }
-          }
-        },
-        {
-          "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/TransitionPanel.ts",
           "resolved": "__unresolved_25",
           "loc": {
             "start": {
               "line": 5,
-              "column": 3285
+              "column": 3291
             },
             "end": {
               "line": 5,
@@ -1365,7 +1365,7 @@
           }
         },
         {
-          "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/AdManager.ts",
+          "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/TransitionPanel.ts",
           "resolved": "__unresolved_26",
           "loc": {
             "start": {
@@ -1374,287 +1374,301 @@
             },
             "end": {
               "line": 5,
-              "column": 3497
+              "column": 3515
+            }
+          }
+        },
+        {
+          "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/AdManager.ts",
+          "resolved": "__unresolved_27",
+          "loc": {
+            "start": {
+              "line": 5,
+              "column": 3531
+            },
+            "end": {
+              "line": 5,
+              "column": 3620
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/AudioManager.ts",
-          "resolved": "__unresolved_27",
+          "resolved": "__unresolved_28",
           "loc": {
             "start": {
               "line": 5,
-              "column": 3513
+              "column": 3636
             },
             "end": {
               "line": 5,
-              "column": 3605
+              "column": 3728
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/ConfigManager.ts",
-          "resolved": "__unresolved_28",
+          "resolved": "__unresolved_29",
           "loc": {
             "start": {
               "line": 5,
-              "column": 3621
+              "column": 3744
             },
             "end": {
               "line": 5,
-              "column": 3714
+              "column": 3837
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/FlatBuffersRuntime.ts",
-          "resolved": "__unresolved_29",
+          "resolved": "__unresolved_30",
           "loc": {
             "start": {
               "line": 5,
-              "column": 3730
+              "column": 3853
             },
             "end": {
               "line": 5,
-              "column": 3828
+              "column": 3951
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/GameManager.ts",
-          "resolved": "__unresolved_30",
+          "resolved": "__unresolved_31",
           "loc": {
             "start": {
               "line": 5,
-              "column": 3844
+              "column": 3967
             },
             "end": {
               "line": 5,
-              "column": 3935
+              "column": 4058
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/Launcher.ts",
-          "resolved": "__unresolved_31",
+          "resolved": "__unresolved_32",
           "loc": {
             "start": {
               "line": 5,
-              "column": 3951
+              "column": 4074
             },
             "end": {
               "line": 5,
-              "column": 4039
+              "column": 4162
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/NodePool.ts",
-          "resolved": "__unresolved_32",
+          "resolved": "__unresolved_33",
           "loc": {
             "start": {
               "line": 5,
-              "column": 4055
+              "column": 4178
             },
             "end": {
               "line": 5,
-              "column": 4143
+              "column": 4266
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/PlatformManager.ts",
-          "resolved": "__unresolved_33",
+          "resolved": "__unresolved_34",
           "loc": {
             "start": {
               "line": 5,
-              "column": 4159
+              "column": 4282
             },
             "end": {
               "line": 5,
-              "column": 4254
+              "column": 4377
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/ResManager.ts",
-          "resolved": "__unresolved_34",
+          "resolved": "__unresolved_35",
           "loc": {
             "start": {
               "line": 5,
-              "column": 4270
+              "column": 4393
             },
             "end": {
               "line": 5,
-              "column": 4360
+              "column": 4483
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/ScreenAdapter.ts",
-          "resolved": "__unresolved_35",
+          "resolved": "__unresolved_36",
           "loc": {
             "start": {
               "line": 5,
-              "column": 4376
+              "column": 4499
             },
             "end": {
               "line": 5,
-              "column": 4469
+              "column": 4592
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/ui/UIBase.ts",
-          "resolved": "__unresolved_36",
+          "resolved": "__unresolved_37",
           "loc": {
             "start": {
               "line": 5,
-              "column": 4485
+              "column": 4608
             },
             "end": {
               "line": 5,
-              "column": 4574
+              "column": 4697
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/ui/UIData.ts",
-          "resolved": "__unresolved_37",
+          "resolved": "__unresolved_38",
           "loc": {
             "start": {
               "line": 5,
-              "column": 4590
+              "column": 4713
             },
             "end": {
               "line": 5,
-              "column": 4679
+              "column": 4802
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/engine/ui/UIManager.ts",
-          "resolved": "__unresolved_38",
+          "resolved": "__unresolved_39",
           "loc": {
             "start": {
               "line": 5,
-              "column": 4695
+              "column": 4818
             },
             "end": {
               "line": 5,
-              "column": 4787
+              "column": 4910
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/framework/EventManager.ts",
-          "resolved": "__unresolved_39",
+          "resolved": "__unresolved_40",
           "loc": {
             "start": {
               "line": 5,
-              "column": 4803
+              "column": 4926
             },
             "end": {
               "line": 5,
-              "column": 4898
+              "column": 5021
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/framework/FrameworkConst.ts",
-          "resolved": "__unresolved_40",
+          "resolved": "__unresolved_41",
           "loc": {
             "start": {
               "line": 5,
-              "column": 4914
+              "column": 5037
             },
             "end": {
               "line": 5,
-              "column": 5011
+              "column": 5134
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/framework/FrameworkEvent.ts",
-          "resolved": "__unresolved_41",
+          "resolved": "__unresolved_42",
           "loc": {
             "start": {
               "line": 5,
-              "column": 5027
+              "column": 5150
             },
             "end": {
               "line": 5,
-              "column": 5124
+              "column": 5247
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/framework/ObjectPool.ts",
-          "resolved": "__unresolved_42",
+          "resolved": "__unresolved_43",
           "loc": {
             "start": {
               "line": 5,
-              "column": 5140
+              "column": 5263
             },
             "end": {
               "line": 5,
-              "column": 5233
+              "column": 5356
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/framework/StorageManager.ts",
-          "resolved": "__unresolved_43",
+          "resolved": "__unresolved_44",
           "loc": {
             "start": {
               "line": 5,
-              "column": 5249
+              "column": 5372
             },
             "end": {
               "line": 5,
-              "column": 5346
+              "column": 5469
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/framework/TimerManager.ts",
-          "resolved": "__unresolved_44",
+          "resolved": "__unresolved_45",
           "loc": {
             "start": {
               "line": 5,
-              "column": 5362
+              "column": 5485
             },
             "end": {
               "line": 5,
-              "column": 5457
+              "column": 5580
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/framework/TypeFactory.ts",
-          "resolved": "__unresolved_45",
+          "resolved": "__unresolved_46",
           "loc": {
             "start": {
               "line": 5,
-              "column": 5473
+              "column": 5596
             },
             "end": {
               "line": 5,
-              "column": 5567
+              "column": 5690
             }
           }
         },
         {
           "value": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/framework/TypeRegistry.ts",
-          "resolved": "__unresolved_46",
+          "resolved": "__unresolved_47",
           "loc": {
             "start": {
               "line": 5,
-              "column": 5583
+              "column": 5706
             },
             "end": {
               "line": 5,
-              "column": 5678
+              "column": 5801
             }
           }
         }
@@ -1721,6 +1735,13 @@
           "resolved": {
             "type": "module",
             "url": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/CommonUIConfig.ts"
+          },
+          "messages": []
+        },
+        {
+          "resolved": {
+            "type": "module",
+            "url": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/AimCursor.ts"
           },
           "messages": []
         },
@@ -28236,7 +28257,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/ui/GamePanel.ts": {
       "mTimestamp": {
-        "mtime": 1790574687715.3347,
+        "mtime": 1790576080838.104,
         "uuid": "0f6f935e-dd32-4f8f-870f-858c31678dec"
       },
       "chunkId": "895e1396d894162089e6130ded2b186ffb39fb45",
@@ -30867,7 +30888,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BattleWorld.ts": {
       "mTimestamp": {
-        "mtime": 1790572613876.1875,
+        "mtime": 1790576070725.0598,
         "uuid": "bff72538-1c41-47e9-9220-9e5165d431e2"
       },
       "chunkId": "6739b58f79fbb038eee3060c9c19791297939aaa",
@@ -30896,7 +30917,7 @@
           }
         },
         {
-          "value": "./BattleHud",
+          "value": "./AimCursor",
           "resolved": "__unresolved_1",
           "loc": {
             "start": {
@@ -30910,57 +30931,71 @@
           }
         },
         {
-          "value": "./BulletManager",
+          "value": "./BattleHud",
           "resolved": "__unresolved_2",
           "loc": {
             "start": {
               "line": 3,
-              "column": 30
+              "column": 26
             },
             "end": {
               "line": 3,
+              "column": 39
+            }
+          }
+        },
+        {
+          "value": "./BulletManager",
+          "resolved": "__unresolved_3",
+          "loc": {
+            "start": {
+              "line": 4,
+              "column": 30
+            },
+            "end": {
+              "line": 4,
               "column": 47
             }
           }
         },
         {
           "value": "./GameConfig",
-          "resolved": "__unresolved_3",
+          "resolved": "__unresolved_4",
           "loc": {
             "start": {
-              "line": 4,
-              "column": 70
+              "line": 5,
+              "column": 84
             },
             "end": {
-              "line": 4,
-              "column": 84
+              "line": 5,
+              "column": 98
             }
           }
         },
         {
           "value": "./EnemyManager",
-          "resolved": "__unresolved_4",
+          "resolved": "__unresolved_5",
           "loc": {
             "start": {
-              "line": 5,
+              "line": 6,
               "column": 29
             },
             "end": {
-              "line": 5,
+              "line": 6,
               "column": 45
             }
           }
         },
         {
           "value": "./PlayerController",
-          "resolved": "__unresolved_5",
+          "resolved": "__unresolved_6",
           "loc": {
             "start": {
-              "line": 6,
+              "line": 7,
               "column": 33
             },
             "end": {
-              "line": 6,
+              "line": 7,
               "column": 53
             }
           }
@@ -30993,6 +31028,13 @@
           "resolved": {
             "type": "module",
             "url": "cce:/internal/x/cc"
+          },
+          "messages": []
+        },
+        {
+          "resolved": {
+            "type": "module",
+            "url": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/AimCursor.ts"
           },
           "messages": []
         },
@@ -31348,7 +31390,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/GameConfig.ts": {
       "mTimestamp": {
-        "mtime": 1790575093896.2234,
+        "mtime": 1790578089920.0256,
         "uuid": "1bf4dab4-a24b-4d7d-88f5-8a7a0d6da8a8"
       },
       "chunkId": "f4996fe77677035eaac24fa083b4ff1de0590ed1",
@@ -31370,7 +31412,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/PlayerController.ts": {
       "mTimestamp": {
-        "mtime": 1790572417059.8623,
+        "mtime": 1790575998418.62,
         "uuid": "67f27f11-0b83-418f-8d12-b4712f69e629"
       },
       "chunkId": "b721ad3973322bf817038ed55e7055f8dc68ba30",
@@ -31403,11 +31445,11 @@
           "resolved": "__unresolved_1",
           "loc": {
             "start": {
-              "line": 3,
+              "line": 4,
               "column": 25
             },
             "end": {
-              "line": 3,
+              "line": 4,
               "column": 37
             }
           }
@@ -31417,11 +31459,11 @@
           "resolved": "__unresolved_2",
           "loc": {
             "start": {
-              "line": 12,
+              "line": 13,
               "column": 7
             },
             "end": {
-              "line": 12,
+              "line": 13,
               "column": 21
             }
           }
@@ -31648,7 +31690,7 @@
     },
     "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/BulletManager.ts": {
       "mTimestamp": {
-        "mtime": 1790574812798.3677,
+        "mtime": 1790575926676.9612,
         "uuid": "23f2184c-4456-49b0-a86c-c68e366eeff6"
       },
       "chunkId": "f4643bc800135f9741164f76f9468385f3121d9a",
@@ -31687,6 +31729,90 @@
             "end": {
               "line": 3,
               "column": 85
+            }
+          }
+        }
+      ],
+      "type": "esm",
+      "resolutions": [
+        {
+          "resolved": {
+            "type": "module",
+            "url": "cce:/internal/code-quality/cr.mjs"
+          },
+          "messages": []
+        },
+        {
+          "resolved": {
+            "type": "module",
+            "url": "cce:/internal/x/cc"
+          },
+          "messages": []
+        },
+        {
+          "resolved": {
+            "type": "module",
+            "url": "cce:/internal/x/cc"
+          },
+          "messages": []
+        },
+        {
+          "resolved": {
+            "type": "module",
+            "url": "cce:/internal/x/cc"
+          },
+          "messages": []
+        },
+        {
+          "resolved": {
+            "type": "module",
+            "url": "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/GameConfig.ts"
+          },
+          "messages": []
+        }
+      ]
+    },
+    "file:///D:/Works/Cocos/WxMiniGames/MiniGameBallRouge/assets/scripts/Game/CommonGame/gameplay/AimCursor.ts": {
+      "mTimestamp": {
+        "mtime": 1790575888251.3228,
+        "uuid": "1353b1b1-d6b2-43ec-b0ac-b2687e4d5e85"
+      },
+      "chunkId": "2870bdfca05c30e83f27984c40b65f7d3b811a0a",
+      "imports": [
+        {
+          "value": "cce:/internal/code-quality/cr.mjs",
+          "resolved": "__unresolved_0"
+        },
+        {
+          "value": "cc"
+        },
+        {
+          "value": "cc"
+        },
+        {
+          "value": "cc",
+          "loc": {
+            "start": {
+              "line": 1,
+              "column": 61
+            },
+            "end": {
+              "line": 1,
+              "column": 65
+            }
+          }
+        },
+        {
+          "value": "./GameConfig",
+          "resolved": "__unresolved_1",
+          "loc": {
+            "start": {
+              "line": 2,
+              "column": 44
+            },
+            "end": {
+              "line": 2,
+              "column": 58
             }
           }
         }

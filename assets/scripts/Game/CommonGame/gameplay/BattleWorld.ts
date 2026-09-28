@@ -1,7 +1,8 @@
 import { Node, SpriteFrame, UITransform } from 'cc';
+import { AimCursor } from './AimCursor';
 import { BattleHud } from './BattleHud';
 import { BulletManager } from './BulletManager';
-import { BULLET_ASSET, DESIGN_HEIGHT, DESIGN_WIDTH, GameTuning } from './GameConfig';
+import { BULLET_ASSET, CURSOR_ASSET, DESIGN_HEIGHT, DESIGN_WIDTH, GameTuning } from './GameConfig';
 import { EnemyManager } from './EnemyManager';
 import { PlayerController } from './PlayerController';
 
@@ -30,6 +31,7 @@ export class BattleWorld {
     private m_Enemies: EnemyManager = new EnemyManager();
     private m_Player: PlayerController = new PlayerController();
     private m_Bullets: BulletManager = new BulletManager();
+    private m_Cursor: AimCursor = new AimCursor();
     private m_Hud: BattleHud = new BattleHud();
     /** 本局创建的层级节点，dispose 时要显式销毁（removeAllChildren 只解挂不销毁） */
     private m_Layers: Node[] = [];
@@ -49,17 +51,20 @@ export class BattleWorld {
         this.m_Tuning = tuning;
         this.m_Callbacks = callbacks;
 
-        // 层级顺序即渲染顺序：敌人 -> 子弹 -> 玩家 -> HUD -> 触摸层
+        // 层级顺序即渲染顺序：敌人 -> 子弹 -> 玩家 -> 瞄准游标 -> HUD -> 触摸层
         const enemyLayer = this.createLayer('EnemyLayer', root);
         const bulletLayer = this.createLayer('BulletLayer', root);
         const playerLayer = this.createLayer('PlayerLayer', root);
+        const cursorLayer = this.createLayer('CursorLayer', root);
         const hudLayer = this.createLayer('HudLayer', root);
         const inputLayer = this.createLayer('InputLayer', root);
 
         this.m_Enemies.init(enemyLayer, tuning, frames);
         this.m_Bullets.init(bulletLayer, tuning, frames.get(BULLET_ASSET));
+        this.m_Cursor.init(cursorLayer, frames.get(CURSOR_ASSET));
         this.m_Player.init({ input: inputLayer, player: playerLayer }, tuning, frames);
         this.m_Player.setBulletManager(this.m_Bullets);
+        this.m_Player.setAimCursor(this.m_Cursor);
         this.m_Hud.init(hudLayer, () => this.m_Callbacks?.onRestart());
         this.m_Hud.updateHp(this.m_Player.hp, this.m_Player.maxHp);
 
@@ -101,6 +106,7 @@ export class BattleWorld {
         this.m_Player.dispose();
         this.m_Enemies.clear();
         this.m_Bullets.clear();
+        this.m_Cursor.dispose();
         this.m_Hud.dispose();
         this.disposeLayers();
         this.m_Callbacks = null;
