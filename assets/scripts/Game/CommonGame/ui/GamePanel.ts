@@ -52,6 +52,8 @@ export class GamePanel extends UIBase {
     m_EnemyFallSpeed: number = DefaultTuning.enemyFallSpeed;
     @property({ tooltip: '【子弹】子弹发射间隔（秒），越小射速越快' })
     m_FireInterval: number = DefaultTuning.fireInterval;
+    @property({ tooltip: '【子弹】同时在场的子弹总数。子弹撞敌人/撞屏幕四周只反弹，飞回玩家身上才回收' })
+    m_BulletCount: number = DefaultTuning.bulletCount;
     @property({ tooltip: '【子弹】子弹飞行速度（像素/秒）' })
     m_BulletSpeed: number = DefaultTuning.bulletSpeed;
     @property({ tooltip: '【子弹】单发子弹伤害' })
@@ -175,6 +177,7 @@ export class GamePanel extends UIBase {
             bulletSpeed: Math.max(1, this.m_BulletSpeed),
             bulletDamage: Math.max(1, this.m_BulletDamage),
             fireInterval: Math.max(0.02, this.m_FireInterval),
+            bulletCount: Math.max(1, Math.floor(this.m_BulletCount)),
             diveSpeed: Math.max(1, this.m_DiveSpeed),
             diveDamage: Math.max(0, this.m_DiveDamage),
             diveHitRadius: Math.max(1, this.m_DiveHitRadius),

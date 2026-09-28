@@ -1,8 +1,9 @@
 import { Node, SpriteFrame, UITransform } from 'cc';
 import { BattleHud } from './BattleHud';
-import { DESIGN_HEIGHT, DESIGN_WIDTH, GameTuning } from './GameConfig';
-import { EnemyData, EnemyManager } from './EnemyManager';
-import { BulletData, PlayerController } from './PlayerController';
+import { BulletManager } from './BulletManager';
+import { BULLET_ASSET, DESIGN_HEIGHT, DESIGN_WIDTH, GameTuning } from './GameConfig';
+import { EnemyManager } from './EnemyManager';
+import { PlayerController } from './PlayerController';
 
 export interface BattleCallbacks {
     /** 玩家血量归零 */
@@ -10,6 +11,12 @@ export interface BattleCallbacks {
     /** 结算浮层里点了重新开始 */
     onRestart: () => void;
 }
+
+/**
+ * 单帧最大推进时间。掉帧或从后台切回来时 dt 可能是零点几秒，
+ * 不夹住的话敌人会瞬移一大段、子弹也会一步跨过敌人。
+ */
+const MAX_FRAME_DT = 0.1;
 
 /**
  * 玩法主控 — 组装层级、驱动每帧推进、处理子弹命中和结算
@@ -22,6 +29,7 @@ export class BattleWorld {
 
     private m_Enemies: EnemyManager = new EnemyManager();
     private m_Player: PlayerController = new PlayerController();
+    private m_Bullets: BulletManager = new BulletManager();
     private m_Hud: BattleHud = new BattleHud();
     /** 本局创建的层级节点，dispose 时要显式销毁（removeAllChildren 只解挂不销毁） */
     private m_Layers: Node[] = [];
@@ -49,7 +57,9 @@ export class BattleWorld {
         const inputLayer = this.createLayer('InputLayer', root);
 
         this.m_Enemies.init(enemyLayer, tuning, frames);
-        this.m_Player.init({ input: inputLayer, bullet: bulletLayer, player: playerLayer }, tuning, frames);
+        this.m_Bullets.init(bulletLayer, tuning, frames.get(BULLET_ASSET));
+        this.m_Player.init({ input: inputLayer, player: playerLayer }, tuning, frames);
+        this.m_Player.setBulletManager(this.m_Bullets);
         this.m_Hud.init(hudLayer, () => this.m_Callbacks?.onRestart());
         this.m_Hud.updateHp(this.m_Player.hp, this.m_Player.maxHp);
 
@@ -61,14 +71,22 @@ export class BattleWorld {
     update(dt: number): void {
         if (!this.isRunning) return;
 
-        this.updateWave(dt);
+        const step = Math.min(Math.max(dt, 0), MAX_FRAME_DT);
+        if (step <= 0) return;
+
+        this.updateWave(step);
 
         const hasEnemy = this.m_Enemies.aliveEnemies.length > 0;
-        this.m_Player.update(dt, hasEnemy);
-        this.resolveBulletHits();
+        this.m_Player.update(step, hasEnemy);
+
+        // 子弹自己推进并处理撞墙 / 撞敌人反弹 / 回到玩家身上回收，
+        // 扣血通过回调交回 EnemyManager，子弹管理器不直接改敌人状态。
+        this.m_Bullets.update(step, this.m_Player.position, this.m_Player.radius, this.m_Enemies.aliveEnemies, (enemy, damage) =>
+            this.m_Enemies.damage(enemy, damage),
+        );
 
         // 敌人推进：墙下移、到线俯冲、贴近的持续攻击玩家
-        this.m_Enemies.update(dt, this.m_Player.position, damage => this.damagePlayer(damage));
+        this.m_Enemies.update(step, this.m_Player.position, damage => this.damagePlayer(damage));
 
         this.m_Hud.updateHp(this.m_Player.hp, this.m_Player.maxHp);
         this.m_Hud.updateStatus(this.m_Enemies.waveCount, this.m_Enemies.aliveEnemies.length);
@@ -82,6 +100,7 @@ export class BattleWorld {
 
         this.m_Player.dispose();
         this.m_Enemies.clear();
+        this.m_Bullets.clear();
         this.m_Hud.dispose();
         this.disposeLayers();
         this.m_Callbacks = null;
@@ -107,35 +126,6 @@ export class BattleWorld {
             }
             this.m_RowTimer -= rowInterval;
         }
-    }
-
-    private resolveBulletHits(): void {
-        const bullets = this.m_Player.bullets;
-        if (bullets.length === 0) return;
-
-        // 快照一份：命中后会立即销毁敌人，不能在原数组上边遍历边删
-        const enemies = this.m_Enemies.aliveEnemies.slice();
-        for (let i = bullets.length - 1; i >= 0; i--) {
-            const bullet = bullets[i];
-            const target = this.findHitEnemy(bullet, enemies);
-            if (!target) continue;
-
-            this.m_Player.removeBullet(bullet);
-            this.m_Enemies.damage(target, this.m_Tuning.bulletDamage);
-        }
-    }
-
-    private findHitEnemy(bullet: BulletData, enemies: EnemyData[]): EnemyData | null {
-        const origin = bullet.node.position;
-        for (const enemy of enemies) {
-            if (enemy.hp <= 0) continue;
-
-            const pos = enemy.node.position;
-            if (Math.abs(origin.x - pos.x) * 2 >= bullet.width + enemy.width) continue;
-            if (Math.abs(origin.y - pos.y) * 2 >= bullet.height + enemy.height) continue;
-            return enemy;
-        }
-        return null;
     }
 
     private damagePlayer(damage: number): void {

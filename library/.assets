@@ -139,7 +139,8 @@
             "scripts\\Game\\CommonGame\\gameplay\\EnemyManager.ts",
             "scripts\\Game\\CommonGame\\gameplay\\GameConfig.ts",
             "scripts\\Game\\CommonGame\\gameplay\\PlayerController.ts",
-            "scripts\\Game\\CommonGame\\gameplay\\HitFlash.ts"
+            "scripts\\Game\\CommonGame\\gameplay\\HitFlash.ts",
+            "scripts\\Game\\CommonGame\\gameplay\\BulletManager.ts"
         ]
     }
 }

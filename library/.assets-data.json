@@ -5920,5 +5920,10 @@
     "url": "db://assets/scripts/Game/CommonGame/gameplay/HitFlash.ts",
     "value": {},
     "versionCode": 1
+  },
+  "23f2184c-4456-49b0-a86c-c68e366eeff6": {
+    "url": "db://assets/scripts/Game/CommonGame/gameplay/BulletManager.ts",
+    "value": {},
+    "versionCode": 1
   }
 }

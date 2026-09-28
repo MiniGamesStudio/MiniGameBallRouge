@@ -138,6 +138,11 @@ export interface GameTuning {
     bulletDamage: number;
     /** 子弹发射间隔（秒），越小射速越快 */
     fireInterval: number;
+    /**
+     * 同时在场的子弹总数。子弹是循环使用的：撞敌人和撞屏幕四周都只反弹不消失，
+     * 只有飞回玩家身上才回收，所以这个数就是玩家的"弹药上限"。
+     */
+    bulletCount: number;
     /** 敌人俯冲玩家的速度（像素/秒） */
     diveSpeed: number;
     /** 俯冲命中玩家扣的血量 */
@@ -163,6 +168,7 @@ export const DefaultTuning: GameTuning = {
     bulletSpeed: 900,
     bulletDamage: 10,
     fireInterval: 0.35,
+    bulletCount: 8,
     diveSpeed: 700,
     diveDamage: 20,
     diveHitRadius: 45,

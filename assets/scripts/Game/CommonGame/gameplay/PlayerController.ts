@@ -1,7 +1,7 @@
 import { EventTouch, Node, Sprite, SpriteFrame, UITransform, Vec3 } from 'cc';
+import { BulletManager } from './BulletManager';
 import { HitFlash } from './HitFlash';
 import {
-    BULLET_ASSET,
     DESIGN_HEIGHT,
     DESIGN_WIDTH,
     DefaultTuning,
@@ -11,18 +11,10 @@ import {
     PLAYER_SPAWN_OFFSET,
 } from './GameConfig';
 
-export interface BulletData {
-    node: Node;
-    speed: number;
-    width: number;
-    height: number;
-}
-
 /** 玩家相关的层级节点，由 BattleWorld 统一按渲染顺序创建 */
 export interface PlayerLayers {
     /** 全屏触摸层，必须是最上面一层 */
     input: Node;
-    bullet: Node;
     player: Node;
 }
 
@@ -30,20 +22,17 @@ export interface PlayerLayers {
  * 玩家控制器 — 拖拽移动、自动开火、血量
  *
  * 拖拽用按下瞬间的手指-玩家偏移量做相对跟随，点屏幕任何位置都不会让玩家瞬移。
+ * 子弹本身不归这里管（见 BulletManager），这里只负责"什么时候扣扳机"。
  */
 export class PlayerController {
     private m_Tuning: GameTuning = DefaultTuning;
     private m_InputTransform: UITransform = null;
     private m_PlayerNode: Node = null;
-    private m_BulletParent: Node = null;
-    private m_BulletFrame: SpriteFrame = null;
-    private m_BulletWidth = 0;
-    private m_BulletHeight = 0;
+    private m_Bullets: BulletManager = null;
 
-    private m_Bullets: BulletData[] = [];
     private m_Hp = 0;
     private m_FireTimer = 0;
-    /** 玩家实际显示边长，和素材原图一致，用来限制移动范围 */
+    /** 玩家实际显示边长，和素材原图一致，用来限制移动范围和算回收半径 */
     private m_PlayerSize = PLAYER_SIZE;
     private m_Flash: HitFlash = null;
 
@@ -53,11 +42,15 @@ export class PlayerController {
 
     init(layers: PlayerLayers, tuning: GameTuning, frames: Map<string, SpriteFrame>): void {
         this.m_Tuning = tuning;
-        this.m_BulletParent = layers.bullet;
         this.m_Hp = Math.max(1, tuning.playerMaxHp);
 
         this.createInputLayer(layers.input);
-        this.createPlayer(layers.player, frames.get(PLAYER_ASSET), frames.get(BULLET_ASSET));
+        this.createPlayer(layers.player, frames.get(PLAYER_ASSET));
+    }
+
+    /** 子弹管理器由 BattleWorld 创建并注入，玩家只负责触发发射 */
+    setBulletManager(manager: BulletManager): void {
+        this.m_Bullets = manager;
     }
 
     get hp(): number {
@@ -72,8 +65,9 @@ export class PlayerController {
         return this.m_PlayerNode;
     }
 
-    get bullets(): BulletData[] {
-        return this.m_Bullets;
+    /** 玩家碰撞半径，子弹飞回这个范围内就被回收 */
+    get radius(): number {
+        return this.m_PlayerSize * 0.5;
     }
 
     get position(): Readonly<Vec3> {
@@ -89,29 +83,24 @@ export class PlayerController {
         return this.m_Hp <= 0;
     }
 
-    /** 推进一帧。canFire 为 false 时不发射（开局、场上没敌人、已结束时） */
+    /**
+     * 推进一帧。canFire 为 false 时不发射（开局、场上没敌人、已结束时）。
+     *
+     * 场上没余弹时计时器最多攒到"一发"，子弹一飞回来就能立刻打出去，
+     * 但不会因为憋了几秒就一次性突突一串。
+     */
     update(dt: number, canFire: boolean): void {
         this.m_Flash?.update(dt);
-        this.updateBullets(dt);
 
-        if (!canFire || !this.m_PlayerNode) return;
+        if (!canFire || !this.m_PlayerNode || !this.m_Bullets) return;
 
         const interval = Math.max(0.02, this.m_Tuning.fireInterval);
-        this.m_FireTimer += dt;
+        this.m_FireTimer = Math.min(this.m_FireTimer + dt, interval);
+        if (!this.m_Bullets.canFire) return;
+
         while (this.m_FireTimer >= interval) {
             this.m_FireTimer -= interval;
-            this.fire();
-        }
-    }
-
-    /** 回收一颗子弹（命中敌人时由 BattleWorld 调用） */
-    removeBullet(bullet: BulletData): void {
-        const index = this.m_Bullets.indexOf(bullet);
-        if (index >= 0) this.m_Bullets.splice(index, 1);
-
-        if (bullet.node && bullet.node.isValid) {
-            bullet.node.removeFromParent();
-            bullet.node.destroy();
+            if (!this.m_Bullets.fire(this.m_PlayerNode.position.x, this.m_PlayerNode.position.y)) break;
         }
     }
 
@@ -124,9 +113,9 @@ export class PlayerController {
             inputNode.off(Node.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
         }
 
-        this.m_Bullets.slice().forEach(bullet => this.removeBullet(bullet));
-        this.m_Bullets.length = 0;
         this.m_Dragging = false;
+        this.m_FireTimer = 0;
+        this.m_Bullets = null;
 
         this.m_Flash?.dispose();
         this.m_Flash = null;
@@ -146,7 +135,7 @@ export class PlayerController {
         inputLayer.on(Node.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
     }
 
-    private createPlayer(playerLayer: Node, playerFrame: SpriteFrame, bulletFrame: SpriteFrame): void {
+    private createPlayer(playerLayer: Node, playerFrame: SpriteFrame): void {
         const node = new Node('Player');
         node.layer = playerLayer.layer;
         playerLayer.addChild(node);
@@ -166,51 +155,6 @@ export class PlayerController {
 
         node.setPosition(0, -DESIGN_HEIGHT * 0.5 + PLAYER_SPAWN_OFFSET, 0);
         this.m_PlayerNode = node;
-
-        // 子弹同样用原图尺寸
-        const bulletRect = bulletFrame ? bulletFrame.rect : null;
-        this.m_BulletWidth = bulletRect ? bulletRect.width : 20;
-        this.m_BulletHeight = bulletRect ? bulletRect.height : 30;
-        this.m_BulletFrame = bulletFrame;
-    }
-
-    private fire(): void {
-        if (!this.m_BulletFrame || !this.m_BulletParent) return;
-
-        const node = new Node('Bullet');
-        node.layer = this.m_BulletParent.layer;
-        this.m_BulletParent.addChild(node);
-
-        const transform = node.addComponent(UITransform);
-        const sprite = node.addComponent(Sprite);
-        sprite.spriteFrame = this.m_BulletFrame;
-        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
-        transform.setContentSize(this.m_BulletWidth, this.m_BulletHeight);
-
-        const origin = this.m_PlayerNode.position;
-        node.setPosition(origin.x, origin.y, 0);
-        this.m_Bullets.push({
-            node,
-            speed: this.m_Tuning.bulletSpeed,
-            width: this.m_BulletWidth,
-            height: this.m_BulletHeight,
-        });
-    }
-
-    private updateBullets(dt: number): void {
-        const topLimit = DESIGN_HEIGHT * 0.5;
-
-        for (let i = this.m_Bullets.length - 1; i >= 0; i--) {
-            const bullet = this.m_Bullets[i];
-            const pos = bullet.node.position;
-            const y = pos.y + bullet.speed * dt;
-
-            if (y - bullet.height * 0.5 > topLimit) {
-                this.removeBullet(bullet);
-                continue;
-            }
-            bullet.node.setPosition(pos.x, y, 0);
-        }
     }
 
     private onTouchStart(event: EventTouch): void {
