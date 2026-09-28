@@ -1,16 +1,20 @@
-import { _decorator, Button, Node, RichText, view } from 'cc';
+import { _decorator, Button, Node, RichText, SpriteFrame, view } from 'cc';
+import { ResManager } from '../../../engine/ResManager';
 import { UIBase } from '../../../engine/ui/UIBase';
 import { UIManager } from '../../../engine/ui/UIManager';
+import { CommonBundleName, CommonUIID } from '../CommonUIConfig';
 import { CommonGameProgress } from '../CommonGameProgress';
-import { CommonUIID } from '../CommonUIConfig';
+import { BattleWorld } from '../gameplay/BattleWorld';
+import { ALL_GAMEPLAY_ASSETS, DefaultTuning, GameTuning, toSpriteFramePath } from '../gameplay/GameConfig';
 const { ccclass, property } = _decorator;
 
 const DESIGN_ROOT_WIDTH = 750;
 const DESIGN_ROOT_HEIGHT = 1334;
 
 /**
- * 游戏主面板 — 仅保留 UI 骨架，玩法逻辑待重写。
- * 节点引用与设计尺寸属性保留，避免编辑器内的绑定丢失。
+ * 游戏主面板 — 弹球 Roguelike Demo
+ *
+ * 玩法实现在 gameplay/ 下，这里只负责：装配数值、加载素材、驱动 BattleWorld、面板生命周期。
  */
 @ccclass('GamePanel')
 export class GamePanel extends UIBase {
@@ -36,8 +40,40 @@ export class GamePanel extends UIBase {
     @property({ tooltip: '游戏根节点最大缩放，1 表示不超过设计尺寸（保持清晰），可调大以在大屏铺满' })
     m_GameRootMaxScale: number = 1;
 
+    @property({ tooltip: '【波次】每隔多少秒生成一波敌人（5~10 行）' })
+    m_WaveInterval: number = DefaultTuning.waveInterval;
+    @property({ tooltip: '【波次】单波最少行数' })
+    m_WaveRowMin: number = DefaultTuning.waveRowMin;
+    @property({ tooltip: '【波次】单波最多行数' })
+    m_WaveRowMax: number = DefaultTuning.waveRowMax;
+    @property({ tooltip: '【波次】波内每行敌人入场的间隔（秒）' })
+    m_RowSpawnInterval: number = DefaultTuning.rowSpawnInterval;
+    @property({ tooltip: '【敌人】整面敌人墙的下移速度（像素/秒）' })
+    m_EnemyFallSpeed: number = DefaultTuning.enemyFallSpeed;
+    @property({ tooltip: '【子弹】子弹发射间隔（秒），越小射速越快' })
+    m_FireInterval: number = DefaultTuning.fireInterval;
+    @property({ tooltip: '【子弹】子弹飞行速度（像素/秒）' })
+    m_BulletSpeed: number = DefaultTuning.bulletSpeed;
+    @property({ tooltip: '【子弹】单发子弹伤害' })
+    m_BulletDamage: number = DefaultTuning.bulletDamage;
+    @property({ tooltip: '【敌人】俯冲玩家的速度（像素/秒）' })
+    m_DiveSpeed: number = DefaultTuning.diveSpeed;
+    @property({ tooltip: '【敌人】俯冲命中玩家扣的血量' })
+    m_DiveDamage: number = DefaultTuning.diveDamage;
+    @property({ tooltip: '【敌人】俯冲命中判定半径' })
+    m_DiveHitRadius: number = DefaultTuning.diveHitRadius;
+    @property({ tooltip: '【敌人】主动攻击玩家的触发距离' })
+    m_EnemyAttackRange: number = DefaultTuning.enemyAttackRange;
+    @property({ tooltip: '【敌人】主动攻击的间隔（秒）' })
+    m_EnemyAttackInterval: number = DefaultTuning.enemyAttackInterval;
+    @property({ tooltip: '【敌人】每次攻击扣的血量' })
+    m_EnemyAttackDamage: number = DefaultTuning.enemyAttackDamage;
+    @property({ tooltip: '【玩家】最大血量' })
+    m_PlayerMaxHp: number = DefaultTuning.playerMaxHp;
+
     private m_CurrentLevel: number = 1;
     private m_IsPaused: boolean = false;
+    private m_Battle: BattleWorld = null;
 
     OnInit(): void {
         this.SetBtnEvent(this.m_PauseBtn, () => this.onPauseBtnClick());
@@ -49,25 +85,115 @@ export class GamePanel extends UIBase {
 
     onDestroy(): void {
         view.off('resize', this.adjustGameRootScale, this);
+        this.disposeBattle();
     }
 
     OnOpen(level: number = this.m_StartLevel): void {
         this.WaitOpenReady();
         this.m_IsPaused = false;
         this.updateLevel(level);
-
-        // TODO: 在此初始化新玩法，准备完成后调用 NotifyOpenReady()
-        this.NotifyOpenReady();
+        this.adjustGameRootScale();
+        this.startBattle();
     }
 
     OnClose(): void {
         super.OnClose();
         this.m_IsPaused = false;
+        this.disposeBattle();
 
-        // TODO: 在此清理新玩法的运行时对象
         if (this.m_GameRoot && this.m_GameRoot.isValid) {
             this.m_GameRoot.removeAllChildren();
         }
+    }
+
+    update(dt: number): void {
+        if (this.m_IsPaused) return;
+        this.m_Battle?.update(dt);
+    }
+
+    /** 装载素材并开一局。重开走同一条路径，先把上一局清干净 */
+    private startBattle(): void {
+        const root = this.m_GameRoot;
+        if (!root || !root.isValid) {
+            this.NotifyOpenReady();
+            return;
+        }
+
+        this.disposeBattle();
+        root.removeAllChildren();
+
+        this.loadGameplayFrames()
+            .then(frames => {
+                if (!this.isValid || !root.isValid) {
+                    this.NotifyOpenReady();
+                    return;
+                }
+
+                this.m_Battle = new BattleWorld();
+                this.m_Battle.start(root, this.buildTuning(), frames, {
+                    onGameOver: () => this.onBattleGameOver(),
+                    onRestart: () => this.restartCurrentLevel(),
+                });
+                this.NotifyOpenReady();
+            })
+            .catch(err => {
+                console.warn('GamePanel: 玩法初始化失败', err);
+                this.NotifyOpenReady();
+            });
+    }
+
+    /** 加载玩法用到的全部图片；单张失败只告警，不阻断开局 */
+    private async loadGameplayFrames(): Promise<Map<string, SpriteFrame>> {
+        const frames = new Map<string, SpriteFrame>();
+        const resManager = ResManager.getInstance();
+
+        await Promise.all(
+            ALL_GAMEPLAY_ASSETS.map(async assetName => {
+                try {
+                    const frame = await resManager.loadFromBundleAsync(
+                        CommonBundleName.Game,
+                        toSpriteFramePath(assetName),
+                        SpriteFrame,
+                    );
+                    frames.set(assetName, frame);
+                } catch (err) {
+                    console.warn(`GamePanel: 加载玩法图片失败 [${assetName}]`, err);
+                }
+            }),
+        );
+
+        return frames;
+    }
+
+    private buildTuning(): GameTuning {
+        return {
+            waveInterval: Math.max(1, this.m_WaveInterval),
+            waveRowMin: Math.max(1, Math.floor(this.m_WaveRowMin)),
+            waveRowMax: Math.max(1, Math.floor(this.m_WaveRowMax)),
+            rowSpawnInterval: Math.max(0.02, this.m_RowSpawnInterval),
+            enemyFallSpeed: Math.max(1, this.m_EnemyFallSpeed),
+            bulletSpeed: Math.max(1, this.m_BulletSpeed),
+            bulletDamage: Math.max(1, this.m_BulletDamage),
+            fireInterval: Math.max(0.02, this.m_FireInterval),
+            diveSpeed: Math.max(1, this.m_DiveSpeed),
+            diveDamage: Math.max(0, this.m_DiveDamage),
+            diveHitRadius: Math.max(1, this.m_DiveHitRadius),
+            enemyAttackRange: Math.max(0, this.m_EnemyAttackRange),
+            enemyAttackInterval: Math.max(0.05, this.m_EnemyAttackInterval),
+            enemyAttackDamage: Math.max(0, this.m_EnemyAttackDamage),
+            playerMaxHp: Math.max(1, this.m_PlayerMaxHp),
+        };
+    }
+
+    private disposeBattle(): void {
+        if (!this.m_Battle) return;
+
+        this.m_Battle.dispose();
+        this.m_Battle = null;
+    }
+
+    private onBattleGameOver(): void {
+        // 结算浮层由 BattleWorld 的 HUD 负责，这里留作后续接排行/复活等流程
     }
 
     private updateLevel(level: number): void {

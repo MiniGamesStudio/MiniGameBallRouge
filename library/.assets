@@ -124,7 +124,22 @@
             "subpackages\\rank\\ranking\\Menu_TopBtn.png",
             "subpackages\\rank\\ranking\\RankingBackground.png",
             "subpackages\\rank\\ui\\Mask.prefab",
-            "subpackages\\rank\\ui\\RankPanel.prefab"
+            "subpackages\\rank\\ui\\RankPanel.prefab",
+            "subpackages\\game\\texture\\game_double_blue.png",
+            "subpackages\\game\\texture\\game_double_geen.png",
+            "subpackages\\game\\texture\\game_double_red.png",
+            "subpackages\\game\\texture\\game_player.png",
+            "subpackages\\game\\texture\\game_single_blue.png",
+            "subpackages\\game\\texture\\game_single_green.png",
+            "subpackages\\game\\texture\\game_single_red.png",
+            "subpackages\\game\\texture\\game_bullet.png",
+            "scripts\\Game\\CommonGame\\gameplay",
+            "scripts\\Game\\CommonGame\\gameplay\\BattleHud.ts",
+            "scripts\\Game\\CommonGame\\gameplay\\BattleWorld.ts",
+            "scripts\\Game\\CommonGame\\gameplay\\EnemyManager.ts",
+            "scripts\\Game\\CommonGame\\gameplay\\GameConfig.ts",
+            "scripts\\Game\\CommonGame\\gameplay\\PlayerController.ts",
+            "scripts\\Game\\CommonGame\\gameplay\\HitFlash.ts"
         ]
     }
 }

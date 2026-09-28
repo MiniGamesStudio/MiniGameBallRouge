@@ -1902,13 +1902,7 @@
     "m_LevelText": {
       "__id__": 61
     },
-    "m_LevelRowCount": 16,
-    "m_LevelColCount": 8,
-    "m_BoardPaddingX": 40,
-    "m_BoardPaddingY": 100,
-    "m_BoardPaddingBottom": 180,
     "m_StartLevel": 1,
-    "m_SheepScale": 1,
     "m_DesignWidth": 750,
     "m_DesignHeight": 1334,
     "m_GameRootMaxScale": 1,
