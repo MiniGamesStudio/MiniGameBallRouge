@@ -3819,9 +3819,7 @@
   },
   "4c0814f7-b690-4a5f-a5c8-61b6f9219a96": {
     "url": "db://assets/subpackages/game/config/sheep_levels.json",
-    "value": {
-      "depends": []
-    },
+    "value": {},
     "versionCode": 1
   },
   "b48b6737-a5b8-4a7f-bf67-b4e6149f4245": {

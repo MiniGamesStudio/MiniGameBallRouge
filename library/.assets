@@ -92,7 +92,6 @@
             "subpackages\\sound\\btnclick.wav",
             "subpackages\\sound\\select.wav",
             "subpackages\\game\\background\\game_bg.png",
-            "subpackages\\game\\config\\sheep_levels.json",
             "subpackages\\game\\Icons\\Skill_1.png",
             "subpackages\\game\\Icons\\Skill_2.png",
             "subpackages\\game\\Icons\\Skill_3.png",

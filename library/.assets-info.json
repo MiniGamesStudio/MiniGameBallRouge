@@ -935,7 +935,7 @@
       "uuid": "b8ee6cb0-96db-4c3b-96d1-d14d1e8d5201"
     },
     "subpackages\\game\\config": {
-      "time": 1790561775959.068,
+      "time": 1790582152892.48,
       "uuid": "e6cb8f45-78b8-4f55-8d8a-e5a35444d9df"
     },
     "subpackages\\game\\Icons": {
@@ -957,9 +957,6 @@
     "subpackages\\rank\\ui": {
       "time": 1790561775975.5828,
       "uuid": "052b7b89-95cf-4f28-a371-7bb037939301"
-    },
-    "subpackages\\game\\config\\sheep_levels.json.meta": {
-      "time": 1790561775960.0684
     },
     "subpackages\\game\\Icons\\Skill_1.png.meta": {
       "time": 1790561775952.0696
@@ -996,10 +993,6 @@
     },
     "subpackages\\rank\\ui\\RankPanel.prefab.meta": {
       "time": 1790561775975.5828
-    },
-    "subpackages\\game\\config\\sheep_levels.json": {
-      "time": 1790561775959.068,
-      "uuid": "4c0814f7-b690-4a5f-a5c8-61b6f9219a96"
     },
     "subpackages\\game\\Icons\\Skill_2.png": {
       "time": 1790561775952.0696,
