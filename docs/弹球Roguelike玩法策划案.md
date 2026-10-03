@@ -64,6 +64,42 @@
 | v0.2 | —— | 逐文件校对实现，发现"生效数值来自 prefab 而非代码"的坑 |
 | v0.3 | —— | 制作人重定义核心设计（原 §26），加入敌人三轴模型、掉落成长、可配置化要求 |
 | **v1.0** | **2026-10-03** | **本文档**：按 5+2 条要求重构全文，收敛为可开发的策划文档；补齐配置表模板、验收标准、旧编号映射 |
+| **v1.1** | **2026-10-03** | **可玩版实测修复**：占位美术真正显示（SpriteFrame 两段式加载 + 缺图可见兜底）；敌人生成节奏与下落速度联动，消除行间重叠 |
+| **v1.2** | **2026-10-03** | **打击反馈落地**：敌人与玩家受击闪白（`hitFlashTime` 0.12 s，起始不透明度 `hitFlashAlpha` 210 → 线性淡出）；敌人额外轻微震动（`hitShakeTime` 0.16 s、幅度 `hitShakeAmplitude` 3 px 随机抖动并衰减，结束时精确归位） |
+### 0.5 实现现状（占位美术可玩版）
+
+**代码位置**：`assets/scripts/Game/CommonGame/gameplay/`，分两层：
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| `core/`（纯逻辑，不依赖 cc） | `GameTuning.ts` 数值真源 / `GameTypes.ts` 枚举与接口 / `Rng.ts` 可注入随机 / `BoardMath.ts` 棋盘几何 / `BulletSim.ts` 子弹状态机 / `EnemySim.ts` 敌人状态机 / `MathModels.ts` 派生公式 / `WaveBuilder.ts` 波次装箱与排期 / `PlayerStats.ts` 属性账本与技能池 | 全部可在 node 里单测（L1） |
+| `view/`（表现） | `BattleView.ts` 编排（输入 / 开火 / 碰撞 / 掉落 / 波次 / HUD / 结算）、`GameArt.ts` 占位美术映射、`ChoiceOverlay.ts` 三选一与结算弹层 | 素材来自 bundle `game` |
+
+**入口**：`ui/GamePanel.ts` 把 `BattleView` 挂到 `m_GameRoot`；面板本身仍只管暂停、关卡号与分辨率缩放。流程：Login → Main → Game。
+
+**当前使用的占位美术**（在 `assets/subpackages/game/`，尺寸正好等于格子）：
+
+| 用途 | 素材 |
+|---|---|
+| 玩家 | `texture/game_player`（80×80） |
+| 玩家子弹 | `texture/game_bullet`（20×30，按飞行方向旋转） |
+| 瞄准游标 | `texture/game_cursor`（40×56） |
+| 单格敌人 | `texture/game_single_blue` / `game_single_red` / `game_single_green`（80×80） |
+| 两格敌人 | `texture/game_double_blue` / `game_double_red` / `game_double_geen`（160×80） |
+
+> ⚠️ 两点现状：① 绿色两格素材的文件名是 **`game_double_geen`**（少一个 r），不是 `game_double_green`；② 4/6/8 格 BOSS 还没有专属素材，暂时用两格贴图拉伸到实际占格（改 `GameArt.enemyArtPath` 一处即可）。品质到颜色的映射：白/绿 → green、蓝 → blue、紫/金/红 → red。
+> 掉落物没有水晶素材，用 Graphics 画圆代替：经验蓝、金币黄、魂晶紫、超级水晶粉。
+
+> **本轮实测发现并修掉的两个坑**（都是"看不见/看不清"类问题，记在这里免得再踩）：
+> ① **占位美术完全不显示**：图片在 Cocos 里是「图片资源 + spriteFrame 子资源」两级结构，按图片路径取 `SpriteFrame` 未必取得到，必须按「原路径 → `路径/spriteFrame`」两段兜底（与 `engine/ui/UIBase.ts` 加载按钮图标一致），再不行就绕过 `ResManager` 直接走引擎原生 `bundle.load`。另外**缺图必须画一个可见的洋红方块**：原来缺图只是 `spriteFrame = null`，画面上什么都没有，看起来就像"素材根本没被用上"。素材改为常驻缓存，避免"用逻辑路径去释放实际命中路径"导致贴图提前失效。
+> ② **敌人重叠**：行入场间隔原来写死 0.5 s，而第 1 波下落速度只有 25 px/s —— 新行出生时上一行才下落 12.5px（行高 80px），两行直接糊在一起。现在行间隔由「本带行数 × `rowGapCells`(1.2) × `cellSize` ÷ 当前波下落速度」推出，行距恒为 96px（行间留 16px 空隙）；出生带的**顶边**对齐出生线，两格大怪不再往上顶半格；带内改为「同排左右依次弹出、不同排同时出生」，保证队形刚性（否则下面那排会少落 2px 压住上面那排）。
+
+**已实现（P0）**：双指操作（拖玩家 / 拖游标，游标开局在屏幕正中）、自动开火与弹匣账本、子弹弹射与底墙回身与主动接弹、防穿模子步进与命中去重、敌人逐行生成（带缩放弹出动画）与缓慢下落、越线 1 s 判定与俯冲（放大 → 缩小 → 命中判定）、经验水晶掉落与磁吸拾取、升级三选一（满级不出现、连升连弹）、开局天赋三选一、波次推进与过关 / 失败结算、HUD（血量 / 弹匣 / 波次 / 等级经验条）、受击反馈（敌我闪白 + 敌人轻微震动）。
+
+**L1 单测**：`tests/ball-roguelike/`（jest + ts-jest，共 32 条，全绿）覆盖子弹三条铁律（底墙回身 / 回身穿透不结算 / 不永久卡死）、出膛保护与防穿模子步进、命中接触窗口去重、经验曲线与连升、波次成长封顶、装箱不变量（不重叠 / 不出界 / 不降级）、俯冲判定与走位躲避、技能三选一与满级过滤。跑法：`npx jest --selectProjects ball-roguelike`。旧六边形地形那套测试单独保留为 `hex-terrain` 项目（其源码已随旧玩法删除，因此目前是红的）。
+
+**还没做（P1+）**：接 FlatBuffers 配置表（现数值在 `GameTuning`，覆盖接口已留）、敌人攻击手段（射箭 / 子弹 / 激光 / 直线冲击）与 BOSS 多阶段、技能进化与融合、超级水晶三种用途、金币刷新与购买、外围加点与皮肤、音效与正式 UI 面板、伤害数字等表现。
+
 
 ---
 
@@ -140,7 +176,7 @@
 | **格（cell）** | **80 × 80 px** | 全部体型与掉落距离的**基准单位**。素材原始尺寸，精灵默认不缩放 |
 | 棋盘列数 | **5 列** | 棋盘宽 400 px，居中于 750，左右各留 175 px |
 | 坐标系 | 原点在屏幕中心 | 底边 y = −667，顶边 y = +667 |
-| 敌人出生线 | y = **+747**（屏幕上方一格） | 敌人从屏幕外走进来 |
+| 敌人出生线 | 生成带的**顶边** y = **+747**（可视区上边界 +667 再上一格） | 单格敌人盒子 = [667, 747]，下落 1px 即露头 |
 | **俯冲线 / 底线** | y = **−567**（距屏幕底 100 px） | 敌人**自身矩形底边**越过此线即进入判定流程（§9.4） |
 | 玩家出生点 | 距屏幕底部 **120 px** | |
 | 墙体 | 屏幕四周边缘 | 子弹撞墙镜面反弹；**底墙**是唯一触发"回身"的墙（§6.3） |
@@ -485,8 +521,8 @@ HP = 品质单格血量 × 占格数 × 类型血量倍率 × 难度血量倍率
 | **生成位置** | 从屏幕**顶部之外一格**（y = +747）进入，敌人是"走进来"而不是"凭空出现" |
 | **排列方式** | 敌人**一行行排列**，棋盘 5 列；同一带的敌人按 `spawnStagger`（0.08 s）错峰入场 |
 | **入场动画** | 每个敌人播放**缩放弹出动画**：`scale 0.6 → 1.0`，时长 **0.25 s**，带轻微回弹（`backOut`） |
-| **行入场间隔** | `rowSpawnInterval` 默认 **0.5 s**（同一波内逐行入场，新行落在旧行**上方**） |
-| **带入场间隔** | 若按带组织（§7.7），`bandSpawnInterval` 建议 **2.0 s** |
+| **行入场间隔** | **不写死时间**：新的一带要出生，先等已出生的内容下落「本带行数 × `rowGapCells`」格，即 `行数 × rowGapCells × cellSize ÷ 当前波下落速度`；`rowGapCells` 默认 **1.2**（一行 80px → 行距 96px，行与行留 16px 空隙） |
+| **带内弹出节奏** | 同一排内左右依次弹出 `spawnStagger`（0.08 s），但总时长受 `spawnStaggerBudget`（默认 0.5，占一个行间隔的比例）约束；**不同排同时出生**，保证"带内保持队形"的刚性 |
 | **墙满排队** | 墙行数上限 `maxWallRows = 20`；满时新行**排队等待**，队列**跨波保留**，解堵后不会一次性涌入 |
 | **血量结算时机** | 血量在**入场那一刻**按当时的难度倍率结算（排队的行拖到下一波入场时，按**新难度**算血量——这是刻意设计） |
 | **换波空窗** | 换波瞬间墙上可能是空的，玩家**仍然要继续累积开火计时**（不允许"没有敌人就不计时"，否则每次换波都白送一个空窗） |
@@ -554,7 +590,7 @@ HP = 品质单格血量 × 占格数 × 类型血量倍率 × 难度血量倍率
         { "template": "e_slime_green|_|e_archer_green|_|e_slime_green" },                        // 空两列做造型
         { "template": "e_gunner_blue|-|_|e_slime_green|e_slime_green" }                          // 双格横：第 0 列锚点、第 1 列写 '-'
       ],
-      "rowSpawnInterval": 0.5
+      "rowGapCells": 1.2
     },
     {
       "mode": "handwritten", "isBossWave": true,
@@ -608,8 +644,8 @@ interface WaveDef {
   qualityWeights?: number[];        // 随机：品质权重（6 项）
   typeWeights?: Record<string, number>;
   shapeWeights?: Record<string, number>;
-  rowSpawnInterval?: number;        // 默认 0.5 s
-  bandSpawnInterval?: number;       // 默认 2.0 s
+  rowGapCells?: number;             // 默认 1.2（相邻两行的纵向间距，单位：格）
+  spawnStaggerBudget?: number;      // 默认 0.5（带内弹出允许占用一个行间隔的比例）
   spawnStagger?: number;            // 默认 0.08 s
   fallSpeed?: number;               // 覆盖默认下移速度
   isBossWave?: boolean;
@@ -1106,8 +1142,8 @@ interface GameTuning {
   diveDamageMax: number;         // 40
   diveHitRadius: number;         // 45
   maxWallRows: number;           // 20
-  rowSpawnInterval: number;      // 0.5
-  bandSpawnInterval: number;     // 2.0
+  rowGapCells: number;           // 1.2
+  spawnStaggerBudget: number;    // 0.5
   spawnStagger: number;          // 0.08
   // 难度曲线
   difficultyRowPerWave: number;  // +1
@@ -1530,7 +1566,7 @@ GamePanel
 | **判定窗提示** | 越线敌人闪烁描边 + 阴影标记 + 轻微缩放往复 | 1 秒判定窗是黄金输出/接弹时机 |
 | **伤害数字** | 命中处飘出数字，0.4 s 上浮淡出；**对象池 + 同屏 ≤ 12 个** | 区分"打中了"与"打空了"（子弹空转是常见挫败源） |
 | **击杀特效** | 敌人碎成 3~5 个小方块四散淡出（1 个 `Graphics` 节点 + 纯 dt 驱动） | 击杀手感；同屏上限 20 |
-| **受击反馈** | 玩家闪白 0.09 s（**用叠加的白色 `Graphics`，不要改 `Sprite.color`** —— color 是乘算，对纯色贴图设白等于没改）+ 屏幕边缘红晕 0.15 s + 轻震屏 | 掉血必须"可感知" |
+| **受击反馈** | **已实现（P0）**：受击瞬间叠一层白色圆角块并线性淡出 —— 敌人与玩家闪白 `hitFlashTime` 0.12 s（`hitFlashAlpha` 210 → 0）；**敌人额外轻微震动** `hitShakeTime` 0.16 s、幅度 `hitShakeAmplitude` 3 px 随机抖动，随时间衰减并在结束时精确归位。实现要点：① 白块作为目标节点的子节点，自动跟随目标的移动与缩放；② 用叠加白色 `Graphics` + `UIOpacity` 淡出，**不要改 `Sprite.color`**（color 是乘算，对纯色贴图设白等于没改）；③ 震动直接改目标节点位置，必须在每帧基准位置定好之后再施加，否则会和逐帧 `setPos` 打架。<br>**P6 待做**：屏幕边缘红晕 0.15 s、轻震屏。 | 掉血 / 打中必须"可感知" |
 | **掉落物** | 出现时缩放弹出 + 常驻轻微呼吸动画；被磁吸时拖出短轨迹 | 让玩家知道"经验在哪、有多少" |
 | **弹药告急** | 弹匣空时屏幕底部中间脉冲提示 | 提示玩家"该去接子弹了" |
 | **攻击预警** | 瞄准线 / 红色预警块 / 激光红线，全部用 `Graphics` 画（零美术） | §8.2 的生命线 |
@@ -1570,7 +1606,7 @@ GamePanel
 | 底线距屏幕底 | 100 px | `bottomLineOffset` |
 | 越线判定窗 | **1.0 s** | `diveTelegraph` |
 | 墙行数上限 | 20 | `maxWallRows` |
-| 行 / 带入场间隔 | 0.5 s / 2.0 s | `rowSpawnInterval` / `bandSpawnInterval` |
+| 行入场间隔 | 由本带行数与下落速度推出（`rowGapCells` = 1.2） | `rowGapCells` / `spawnStaggerBudget` |
 | 带内错峰 | 0.08 s | `spawnStagger` |
 | 入场缩放动画 | `0.6 → 1.0`，0.25 s | 表现参数 |
 
@@ -1962,8 +1998,12 @@ GamePanel
 | `qualityWeights` | array:int | 6 项品质权重，如 `[60,40,0,0,0,0]` |
 | `typeWeights` | array:int | 4 项类型权重，如 `[78,18,3,1]` |
 | `shapeWeights` | array:int | 6 项体型权重，如 `[6,3,3,1,1,1]` |
-| `rowSpawnInterval` | float | 行入场间隔（0.5） |
-| `bandSpawnInterval` | float | 带入场间隔（2.0） |
+| `rowGapCells` | float | 相邻两行的纵向间距（格，1.2） |
+| `spawnStaggerBudget` | float | 带内弹出占用一个行间隔的比例（0.5） |
+| `hitFlashTime` | float | 受击闪白持续时间 秒（0.12） |
+| `hitFlashAlpha` | float | 受击闪白起始不透明度 0~255（210） |
+| `hitShakeTime` | float | 敌人受击震动持续时间 秒（0.16） |
+| `hitShakeAmplitude` | float | 敌人受击震动幅度 px（3，随时间衰减） |
 | `spawnStagger` | float | 带内错峰（0.08） |
 | `fallSpeed` | float | 覆盖默认下移速度（0 = 用曲线） |
 | `isBossWave` | bool | 是否 BOSS 波 |
@@ -2157,7 +2197,7 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 |---|---|
 | **行入场速度恒定** | 行入场间隔不随难度变化（难度由行数/速度/血量三条线承担），这是一条隐性缓冲 |
 | **血量在入场那一刻结算** | 排队等待的行拖到下一波入场时按**新难度**算血量（刻意设计） |
-| **新行 y 取 `max(出生线, 顶行 + 行高)`** | 墙顶被顶到出生线之上时新行贴在出生线，屏幕外不会无限堆积，但也不会提前入场 |
+| **新行/新带的出生时刻由"行时钟"决定** | 不看墙顶在哪，只按「已出生内容需下落本带行数」推进时间；因此行距恒定，既不重叠也不会因墙顶堆积而漂移 |
 | **升级面板延迟一帧弹出** | 首波是同步发生的，升级面板要等 UI 就绪后再弹（否则面板还没打开就要求玩家选择） |
 | **死亡时清空升级队列** | 三选一面板在 `PopUp` 层恒在结算之上，不清空会盖住"重新开始" → 软锁 |
 

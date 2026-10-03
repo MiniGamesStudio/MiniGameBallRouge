@@ -45,7 +45,7 @@ program
     .option('-s, --source <dir>', 'Excel 源文件目录')
     .option('-o, --output <dir>', '二进制输出目录')
     .option('-S, --schema <dir>', 'Schema 输出目录')
-    .option('-f, --flatc <path>', 'flatc 编译器路径', 'flatc')
+    .option('-f, --flatc <path>', 'flatc 编译器路径（缺省读 config.json 的 flatcPath）')
     .option('-t, --ts <dir>', 'TypeScript 访问器输出目录（默认 <输出目录>/generated）')
     .option('--force', '强制导出（忽略增量检测和兼容性检查）', false)
     .option('-c, --config <path>', '配置文件路径', DEFAULT_CONFIG_PATH)

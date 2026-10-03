@@ -2,5 +2,5 @@
   "sourceDir": "../excel-config",
   "outputDir": "../../assets/resources/config/roguelike",
   "schemaDir": "./schemas",
-  "flatcPath": "flatc"
+  "flatcPath": "C:/MyWork/flatc/flatc.exe"
 }

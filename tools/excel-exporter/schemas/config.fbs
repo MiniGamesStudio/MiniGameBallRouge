@@ -1,8 +1,225 @@
 // 自动生成的 FlatBuffers Schema 文件（全部配置表合并）
-// 源工作表: Meta_Point
+// 源工作表: Drop, Quality, Enemy, Boss_Phase, Level, Wave, Row, Meta_Point, Player, Skill, Skill_Effect, Skin, Tuning
 // 请勿手动修改此文件
 
 namespace Config;
+
+/// Drop 单条记录
+table Drop {
+  /// 掉落规则 ID
+  id:string;
+  /// 来源 0全局默认 1按品质 2按类型 3按具体敌人
+  sourceKind:byte;
+  /// 配合来源：品质 0~5 / 类型 0~3 / 敌人 ID；全局填 *
+  sourceId:string;
+  /// 掉落物 0经验水晶 1超级水晶 2金币 3魂晶
+  kind:byte;
+  /// 概率 0~1（经验水晶固定 1.0）
+  chance:float32;
+  /// 数量下限
+  amountMin:int32;
+  /// 数量上限
+  amountMax:int32;
+  /// 散落半径 px（0.2 格 = 16 px）
+  scatterRadius:float32;
+  /// 磁吸半径 px（0 = 需手动拾取）
+  magnetRadius:int32;
+  /// 存活时间 秒（最后 3s 闪烁）
+  lifeTime:float32;
+  /// 经验水晶携带经验（0 = 按品质×类型算）
+  value:int32;
+  /// 备注
+  desc:string;
+}
+
+/// Drop 记录列表
+table DropList {
+  items:[Drop];
+}
+
+/// Quality 单条记录
+table Quality {
+  /// 品质 0白 1绿 2蓝 3紫 4金 5红
+  quality:byte;
+  /// 品质名
+  name:string;
+  /// 染色色值（零美术方案：同一贴图按品质染色）
+  colorHex:string;
+  /// 单格血量（约 ×1.65 几何递增）
+  hpPerCell:int32;
+  /// 生成权重（越大越常见）
+  weight:int32;
+  /// 单格基础经验
+  exp:int32;
+  /// 单格基础金币
+  coin:int32;
+  /// 备注
+  desc:string;
+}
+
+/// Quality 记录列表
+table QualityList {
+  items:[Quality];
+}
+
+/// Enemy 单条记录
+table Enemy {
+  /// 敌人 ID（关卡行模板里引用它）
+  id:string;
+  /// 显示名
+  name:string;
+  /// 品质 0白 1绿 2蓝 3紫 4金 5红
+  quality:byte;
+  /// 类型 0普通 1精英 2小BOSS 3大BOSS
+  type:byte;
+  /// 体型 0单格 1双格横 2双格竖 3四格 4六格 5八格
+  shape:byte;
+  /// 贴图名（零美术方案：按品质染色）
+  asset:string;
+  /// 额外血量倍率（默认 1，血量主要走品质表）
+  hpMul:float32;
+  /// 是否攻击（普通怪默认 FALSE）
+  attackEnabled:bool;
+  /// 手段 0无 1射箭 2子弹 3激光 4直线冲击
+  attackKind:byte;
+  /// 触发距离 px（玩家进入才攻击）
+  attackRange:int32;
+  /// 攻击间隔 秒
+  attackInterval:float32;
+  /// 单次伤害
+  attackDamage:int32;
+  /// 预警时长 秒（除子弹外必须 > 0）
+  attackWindup:float32;
+  /// 弹速/冲刺速度 px/s
+  attackSpeed:int32;
+  /// 连发数（扇形子弹用）
+  attackCount:int32;
+  /// 发散角 度（扇形子弹用）
+  attackSpreadDeg:float32;
+  /// BOSS：停下移动释放技能
+  stopToCast:bool;
+  /// 停下时长 秒
+  castDuration:float32;
+  /// 经验倍率（普通1 精英3 小BOSS8 大BOSS20）
+  expMul:float32;
+  /// 金币倍率
+  coinMul:float32;
+  /// 随机生成权重（BOSS 一般由关卡指定，权重给 0）
+  weight:int32;
+  /// 备注
+  desc:string;
+}
+
+/// Enemy 记录列表
+table EnemyList {
+  items:[Enemy];
+}
+
+/// Boss_Phase 单条记录
+table BossPhase {
+  /// 关联 Enemy.id
+  enemyId:string;
+  /// 阶段序号 1/2/3
+  phaseIndex:int32;
+  /// 该阶段血量上限比例（1.0 / 0.66 / 0.33）
+  hpThreshold:float32;
+  /// 下移速度倍率（阶段越后越快）
+  speedScale:float32;
+  /// 攻击间隔倍率（越小越狂暴）
+  intervalScale:float32;
+  /// 本阶段可用手段，如 [1,4]
+  attackKinds:[int32];
+  /// 召唤的小怪 ID（可空）
+  summonDefId:string;
+  /// 召唤数量
+  summonCount:int32;
+  /// 备注
+  desc:string;
+}
+
+/// Boss_Phase 记录列表
+table BossPhaseList {
+  items:[BossPhase];
+}
+
+/// Level 单条记录
+table Level {
+  /// 关卡 ID
+  id:string;
+  /// 关卡名
+  name:string;
+  /// 随机种子（0 = 不使用随机）
+  seed:int32;
+  /// 是否无尽（波次按难度公式持续生成）
+  isEndless:bool;
+  /// 关卡级血量倍率
+  hpMul:float32;
+  /// 关卡级速度倍率
+  speedMul:float32;
+  /// 备注
+  desc:string;
+}
+
+/// Level 记录列表
+table LevelList {
+  items:[Level];
+}
+
+/// Wave 单条记录
+table Wave {
+  /// 波次 ID
+  id:string;
+  /// 所属关卡 Level.id
+  levelId:string;
+  /// 第几波（从 1 开始）
+  waveIndex:int32;
+  /// 生成方式 0手写 1随机
+  mode:byte;
+  /// 随机模式种子（0 = 用关卡种子）
+  seed:int32;
+  /// 随机模式生成几个带（1 带 = 2 行 = 10 格）
+  bands:int32;
+  /// 6 项品质权重，如 [60,40,0,0,0,0]
+  qualityWeights:[int32];
+  /// 4 项类型权重，如 [78,18,3,1]
+  typeWeights:[int32];
+  /// 6 项体型权重 [单格,双横,双竖,四格,六格,八格]
+  shapeWeights:[int32];
+  /// 带内错峰 秒（做出逐个弹出）
+  spawnStagger:float32;
+  /// 覆盖默认下移速度 px/s（0 = 用难度曲线）
+  fallSpeed:float32;
+  /// 是否 BOSS 波
+  isBossWave:bool;
+  /// 备注
+  desc:string;
+}
+
+/// Wave 记录列表
+table WaveList {
+  items:[Wave];
+}
+
+/// Row 单条记录
+table Row {
+  /// 行 ID
+  id:string;
+  /// 所属关卡
+  levelId:string;
+  /// 所属波次
+  waveIndex:int32;
+  /// 行序号（0 = 最先进场）
+  rowIndex:int32;
+  /// 行模板：5 槽位用 | 分隔；defId=锚点格、-=被相邻锚点占用的格（同行左侧或上一行）、_=空列
+  template:string;
+  /// 备注
+  desc:string;
+}
+
+/// Row 记录列表
+table RowList {
+  items:[Row];
+}
 
 /// Meta_Point 单条记录
 table MetaPoint {
@@ -35,4 +252,147 @@ table MetaPointList {
   items:[MetaPoint];
 }
 
-root_type MetaPointList;
+/// Player 单条记录
+table Player {
+  /// 主键（固定 p_default）
+  id:string;
+  /// 显示名
+  name:string;
+  /// 最大血量
+  maxHp:int32;
+  /// 视觉半径 px（贴图内切圆）
+  visualRadius:int32;
+  /// 受击判定半径 px（建议 24~28，越小越耐玩）
+  hitRadius:int32;
+  /// 移动速度 px/s
+  moveSpeed:int32;
+  /// 初始弹匣容量（需求：初始 5 发，可配置）
+  bulletCount:int32;
+  /// 开火间隔 秒
+  fireInterval:float32;
+  /// 子弹速度 px/s
+  bulletSpeed:int32;
+  /// 单发伤害
+  bulletDamage:int32;
+  /// 子弹半径 px
+  bulletRadius:int32;
+  /// 回收/主动接弹半径 px（建议 = hitRadius + bulletRadius）
+  catchRadius:int32;
+  /// 子弹最长存活 秒（超时强制回身，兜底）
+  maxBulletLife:float32;
+  /// 掉落物磁吸半径 px（可被技能/加点提升）
+  magnetRadius:int32;
+  /// 免费弹上限（僚机/分裂弹，不占弹匣）
+  freeBulletMax:int32;
+  /// 贴图名
+  sprite:string;
+  /// 备注
+  desc:string;
+}
+
+/// Player 记录列表
+table PlayerList {
+  items:[Player];
+}
+
+/// Skill 单条记录
+table Skill {
+  /// 技能 ID
+  id:string;
+  /// 名称
+  name:string;
+  /// 类别 0天赋 1主动 2被动（天赋也是技能）
+  kind:byte;
+  /// 稀有度 0普通 1稀有 2史诗 3传说
+  rarity:byte;
+  /// 等级上限（不允许无上限）
+  maxLevel:int32;
+  /// 抽取权重（0 = 不参与随机，只能由进化/融合得到）
+  weight:int32;
+  /// 图标资源名
+  icon:string;
+  /// 标签，如 ["chain","electric"]（融合判定用）
+  tags:[string];
+  /// 满级后进化成的技能 ID（可空）
+  evolveInto:string;
+  /// 进化消耗超级水晶数
+  evolveCost:int32;
+  /// 融合组合：["对方技能ID:产物技能ID:消耗水晶数"]
+  fusePartners:[string];
+  /// 描述文案
+  desc:string;
+}
+
+/// Skill 记录列表
+table SkillList {
+  items:[Skill];
+}
+
+/// Skill_Effect 单条记录
+table SkillEffect {
+  /// 关联 Skill.id
+  skillId:string;
+  /// 作用目标，如 bulletDamage / fireInterval / chainTargets / magnetRadius
+  target:string;
+  /// 运算 0加法 1乘法（乘法填 0.2 表示 +20%）
+  op:byte;
+  /// 每级增量
+  perLevel:float32;
+  /// 基础加成（Lv.0 也生效，可空填 0）
+  base:float32;
+  /// 该效果封顶（0 = 不封顶）
+  cap:float32;
+  /// 备注
+  desc:string;
+}
+
+/// Skill_Effect 记录列表
+table SkillEffectList {
+  items:[SkillEffect];
+}
+
+/// Skin 单条记录
+table Skin {
+  /// 皮肤 ID
+  id:string;
+  /// 名称
+  name:string;
+  /// 资源名
+  asset:string;
+  /// 获取方式 0默认拥有 1魂晶兑换 2召唤
+  unlock:byte;
+  /// 兑换消耗魂晶（召唤皮肤填 0）
+  cost:int32;
+  /// 属性加成目标（留空 = 纯外观）
+  bonusTarget:string;
+  /// 运算 0加法 1乘法
+  bonusOp:byte;
+  /// 加成数值（建议 ≤ 0.05）
+  bonusValue:float32;
+  /// 备注
+  desc:string;
+}
+
+/// Skin 记录列表
+table SkinList {
+  items:[Skin];
+}
+
+/// Tuning 单条记录
+table Tuning {
+  /// 数值键（与 GameTuning 字段名一致）
+  key:string;
+  /// 数值（整数也填数字）
+  value:float32;
+  /// 分组
+  group:string;
+  /// 说明
+  desc:string;
+}
+
+/// Tuning 记录列表
+table TuningList {
+  items:[Tuning];
+}
+
+root_type DropList;

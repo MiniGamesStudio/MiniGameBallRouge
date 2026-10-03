@@ -3,19 +3,18 @@ import { UIBase } from '../../../engine/ui/UIBase';
 import { UIManager } from '../../../engine/ui/UIManager';
 import { CommonUIID } from '../CommonUIConfig';
 import { CommonGameProgress } from '../CommonGameProgress';
+import { BattleView } from '../gameplay/view/BattleView';
 const { ccclass, property } = _decorator;
 
 const DESIGN_ROOT_WIDTH = 750;
 const DESIGN_ROOT_HEIGHT = 1334;
 
 /**
- * 游戏主面板 — 玩法代码已清空，只保留面板框架
+ * 游戏主面板 — 面板框架 + 玩法挂载点
  *
- * 保留下来的都是与玩法无关的框架部分：
- * 面板生命周期、关卡号记录、暂停流程、游戏根节点按分辨率缩放。
- *
- * 原 gameplay/ 下的战斗实现（子弹、敌人、技能、数值表）已整体移除；
- * 重写玩法时在这里接回来即可，面板框架本身不需要再改。
+ * 框架部分：面板生命周期、关卡号记录、暂停流程、游戏根节点按分辨率缩放。
+ * 玩法部分：把 BattleView 挂到 m_GameRoot 上，实现位于 gameplay/ 目录
+ * （core/ 是纯逻辑、可单测；view/ 负责节点与占位美术）。
  *
  * ⚠️ 这里【故意】不声明任何数值型 @property。
  * 历史坑：这些字段曾在 prefab 里存了另一套值并【静默覆盖】GameConfig.DefaultTuning，
@@ -43,6 +42,7 @@ export class GamePanel extends UIBase {
 
     private m_CurrentLevel: number = 1;
     private m_IsPaused: boolean = false;
+    private m_Battle: BattleView | null = null;
 
     OnInit(): void {
         this.SetBtnEvent(this.m_PauseBtn, () => this.onPauseBtnClick());
@@ -58,18 +58,42 @@ export class GamePanel extends UIBase {
         this.m_IsPaused = false;
         this.updateLevel(level);
         this.adjustGameRootScale();
-        // 玩法代码已清空：这里没有任何异步加载，直接结束"打开中"状态。
-        // 重写玩法时如果又要预加载素材，把 NotifyOpenReady 挪到加载完成之后。
-        this.NotifyOpenReady();
+        // 玩法：挂载 BattleView（占位美术从 bundle game 加载），素材就绪后再结束打开中状态
+        void this.startBattle(level);
     }
 
     OnClose(): void {
         super.OnClose();
+        this.destroyBattle();
         this.m_IsPaused = false;
 
         if (this.m_GameRoot && this.m_GameRoot.isValid) {
             this.m_GameRoot.removeAllChildren();
         }
+    }
+
+    /** 启动一局战斗（等待占位素材加载完成后结束哦打开中哦状态） */
+    private async startBattle(level: number): Promise<void> {
+        this.destroyBattle();
+        if (!this.m_GameRoot || !this.m_GameRoot.isValid) {
+            this.NotifyOpenReady();
+            return;
+        }
+
+        this.m_Battle = await BattleView.create(this.m_GameRoot, {
+            level,
+            onRestart: () => this.restartCurrentLevel(),
+            onExit: () => this.goBackMainPanel(),
+        });
+        this.NotifyOpenReady();
+    }
+
+    /** 卸载战斗（重开 / 关闭面板时调用） */
+    private destroyBattle(): void {
+        if (this.m_Battle && this.m_Battle.isValid) {
+            this.m_Battle.node.destroy();
+        }
+        this.m_Battle = null;
     }
 
     private updateLevel(level: number): void {
@@ -107,6 +131,7 @@ export class GamePanel extends UIBase {
         if (this.m_IsPaused) return;
 
         this.m_IsPaused = true;
+        this.m_Battle?.setPaused(true);
         UIManager.GetInstance().OpenPanel(CommonUIID.PausePanel, {
             onContinue: () => this.continueCurrentLevel(),
             onRestart: () => this.restartCurrentLevel(),
@@ -116,10 +141,12 @@ export class GamePanel extends UIBase {
 
     private continueCurrentLevel(): void {
         this.m_IsPaused = false;
+        this.m_Battle?.setPaused(false);
     }
 
     private restartCurrentLevel(): void {
         this.m_IsPaused = false;
+        this.destroyBattle();
         this.OnOpen(this.m_CurrentLevel);
     }
 

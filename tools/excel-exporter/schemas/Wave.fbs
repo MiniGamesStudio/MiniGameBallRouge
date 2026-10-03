@@ -24,10 +24,6 @@ table Wave {
   typeWeights:[int32];
   /// 6 项体型权重 [单格,双横,双竖,四格,六格,八格]
   shapeWeights:[int32];
-  /// 行入场间隔 秒
-  rowSpawnInterval:float32;
-  /// 带入场间隔 秒
-  bandSpawnInterval:float32;
   /// 带内错峰 秒（做出逐个弹出）
   spawnStagger:float32;
   /// 覆盖默认下移速度 px/s（0 = 用难度曲线）

@@ -1,0 +1,212 @@
+/**
+ * 局内成长：属性账本 + 技能池（纯逻辑层，不依赖 cc）
+ *
+ * 技能与天赋共用一套数据（策划案 §12：天赋也是技能的一种），
+ * 差别只在「什么时候抽」：开局抽天赋、升级抽技能。
+ *
+ * ⚠️ P0 说明：这里的技能池是**可玩性最小集**，每个技能都有真实生效的数值改动；
+ * 正式技能表（15 条 + 进化 + 融合）落地后，把 SKILL_POOL 换成读 Skill 配置表即可，
+ * 抽取/满级过滤/上锁的逻辑不用改。
+ */
+
+import { IRandom, RandomUtil } from './Rng';
+import { GameTuning } from './GameTuning';
+import { applyExp, expNeed } from './MathModels';
+
+/** 一局内会变的玩家属性（技能的施加对象） */
+export interface RunStats {
+    hp: number;
+    maxHp: number;
+    /** 弹匣容量 */
+    bulletCount: number;
+    /** 开火间隔（s） */
+    fireInterval: number;
+    bulletDamage: number;
+    bulletSpeed: number;
+    /** 回收半径加成 */
+    catchRadiusBonus: number;
+    /** 磁吸半径加成 */
+    magnetRadiusBonus: number;
+    /** 经验获取倍率 */
+    expMul: number;
+    /** 当前等级与经验 */
+    level: number;
+    exp: number;
+}
+
+/** 开局属性（全部来自 GameTuning，便于后续被配置表覆盖） */
+export function createRunStats(): RunStats {
+    return {
+        hp: GameTuning.playerMaxHp,
+        maxHp: GameTuning.playerMaxHp,
+        bulletCount: GameTuning.bulletCount,
+        fireInterval: GameTuning.fireInterval,
+        bulletDamage: GameTuning.bulletDamage,
+        bulletSpeed: GameTuning.bulletSpeed,
+        catchRadiusBonus: 0,
+        magnetRadiusBonus: 0,
+        expMul: 1,
+        level: 1,
+        exp: 0,
+    };
+}
+
+/** 技能定义 */
+export interface SkillDef {
+    id: string;
+    name: string;
+    desc: string;
+    /** 最大等级，达到后不再出现在候选里 */
+    maxLevel: number;
+    apply(stats: RunStats): void;
+}
+
+/** 技能池（P0 最小集） */
+export const SKILL_POOL: readonly SkillDef[] = [
+    {
+        id: 's_magazine',
+        name: '弹匣扩容',
+        desc: '弹匣 +1',
+        maxLevel: 5,
+        apply: stats => {
+            stats.bulletCount += 1;
+        },
+    },
+    {
+        id: 's_power',
+        name: '攻击强化',
+        desc: '子弹伤害 +3',
+        maxLevel: 5,
+        apply: stats => {
+            stats.bulletDamage += 3;
+        },
+    },
+    {
+        id: 's_rapid',
+        name: '快速射击',
+        desc: '开火间隔 −10%',
+        maxLevel: 5,
+        apply: stats => {
+            stats.fireInterval = Math.max(0.12, stats.fireInterval * 0.9);
+        },
+    },
+    {
+        id: 's_velocity',
+        name: '弹速提升',
+        desc: '子弹速度 +10%',
+        maxLevel: 5,
+        apply: stats => {
+            stats.bulletSpeed *= 1.1;
+        },
+    },
+    {
+        id: 's_catch',
+        name: '磁力回收',
+        desc: '回收半径 +6',
+        maxLevel: 3,
+        apply: stats => {
+            stats.catchRadiusBonus += 6;
+        },
+    },
+    {
+        id: 's_magnet',
+        name: '拾取范围',
+        desc: '经验磁吸半径 +40',
+        maxLevel: 3,
+        apply: stats => {
+            stats.magnetRadiusBonus += 40;
+        },
+    },
+    {
+        id: 's_vitality',
+        name: '生命强化',
+        desc: '生命上限 +20 并回复 20',
+        maxLevel: 5,
+        apply: stats => {
+            stats.maxHp += 20;
+            stats.hp = Math.min(stats.maxHp, stats.hp + 20);
+        },
+    },
+    {
+        id: 's_greed',
+        name: '贪婪',
+        desc: '经验获取 +20%',
+        maxLevel: 3,
+        apply: stats => {
+            stats.expMul += 0.2;
+        },
+    },
+];
+
+/**
+ * 抽取候选技能：已满级的不出现
+ * @param levels 技能 id → 已学等级
+ */
+export function pickSkillChoices(
+    rng: IRandom,
+    levels: Map<string, number>,
+    count: number = GameTuning.choiceCount,
+    pool: readonly SkillDef[] = SKILL_POOL
+): SkillDef[] {
+    const available = pool.filter(skill => (levels.get(skill.id) ?? 0) < skill.maxLevel);
+    return RandomUtil.sample(rng, available, count);
+}
+
+/**
+ * 记录一次技能被选中（返回新等级）
+ *
+ * 等级会被夹到技能池里的 maxLevel：正常流程下 pickSkillChoices 不会给出满级技能，
+ * 但外部（存档、调试、未来的融合系统）绕过抽取直接调用时必须保证上限不被突破，
+ * 否则 skillLevelText 会显示出 8/5 这种脏数据。
+ */
+export function markSkillLearned(levels: Map<string, number>, skillId: string): number {
+    const def = SKILL_POOL.find(skill => skill.id === skillId);
+    const cap = def ? def.maxLevel : Number.MAX_SAFE_INTEGER;
+    const next = Math.min(cap, (levels.get(skillId) ?? 0) + 1);
+    levels.set(skillId, next);
+    return next;
+}
+
+/** 技能当前等级文案（1/3 表示 1 级、上限 3 级） */
+export function skillLevelText(levels: Map<string, number>, skill: SkillDef): string {
+    const current = levels.get(skill.id) ?? 0;
+    if (current <= 0) return '新技能';
+    return `升级 ${current}/${skill.maxLevel}`;
+}
+
+/**
+ * 结算经验并升级
+ * @returns 本次升了几级（0 = 没升级）
+ */
+export function grantExp(stats: RunStats, gained: number): number {
+    const result = applyExp(stats.level, stats.exp, gained * stats.expMul);
+    stats.level = result.level;
+    stats.exp = result.exp;
+    return result.levels;
+}
+
+/** 距离下一级还差多少经验 */
+export function expToNextLevel(stats: RunStats): number {
+    return expNeed(stats.level);
+}
+
+/** 受伤（返回是否死亡） */
+export function damagePlayer(stats: RunStats, damage: number): boolean {
+    stats.hp = Math.max(0, stats.hp - Math.max(0, damage));
+    return stats.hp <= 0;
+}
+
+/** 调试用：一行打印本局生效数值（策划案 §16.3 要求关键值可打印） */
+export function describeStats(stats: RunStats): string {
+    return [
+        `Lv${stats.level}`,
+        `HP ${Math.ceil(stats.hp)}/${stats.maxHp}`,
+        `弹匣 ${stats.bulletCount}`,
+        `伤害 ${stats.bulletDamage}`,
+        `间隔 ${stats.fireInterval.toFixed(3)}s`,
+        `弹速 ${Math.round(stats.bulletSpeed)}`,
+        `回收+${stats.catchRadiusBonus}`,
+        `磁吸+${stats.magnetRadiusBonus}`,
+        `经验×${stats.expMul.toFixed(2)}`,
+    ].join(' | ');
+}

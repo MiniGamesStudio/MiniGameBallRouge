@@ -63,14 +63,6 @@ static endMetaPointList(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static finishMetaPointListBuffer(builder:flatbuffers.Builder, offset:flatbuffers.Offset) {
-  builder.finish(offset);
-}
-
-static finishSizePrefixedMetaPointListBuffer(builder:flatbuffers.Builder, offset:flatbuffers.Offset) {
-  builder.finish(offset, undefined, true);
-}
-
 static createMetaPointList(builder:flatbuffers.Builder, itemsOffset:flatbuffers.Offset):flatbuffers.Offset {
   MetaPointList.startMetaPointList(builder);
   MetaPointList.addItems(builder, itemsOffset);

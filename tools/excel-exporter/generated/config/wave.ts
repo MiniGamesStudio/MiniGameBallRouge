@@ -132,26 +132,10 @@ shapeWeightsArray():Int32Array|null {
 }
 
 /**
- * 行入场间隔 秒
- */
-rowSpawnInterval():number {
-  const offset = this.bb!.__offset(this.bb_pos, 22);
-  return offset ? this.bb!.readFloat32(this.bb_pos + offset) : 0.0;
-}
-
-/**
- * 带入场间隔 秒
- */
-bandSpawnInterval():number {
-  const offset = this.bb!.__offset(this.bb_pos, 24);
-  return offset ? this.bb!.readFloat32(this.bb_pos + offset) : 0.0;
-}
-
-/**
  * 带内错峰 秒（做出逐个弹出）
  */
 spawnStagger():number {
-  const offset = this.bb!.__offset(this.bb_pos, 26);
+  const offset = this.bb!.__offset(this.bb_pos, 22);
   return offset ? this.bb!.readFloat32(this.bb_pos + offset) : 0.0;
 }
 
@@ -159,7 +143,7 @@ spawnStagger():number {
  * 覆盖默认下移速度 px/s（0 = 用难度曲线）
  */
 fallSpeed():number {
-  const offset = this.bb!.__offset(this.bb_pos, 28);
+  const offset = this.bb!.__offset(this.bb_pos, 24);
   return offset ? this.bb!.readFloat32(this.bb_pos + offset) : 0.0;
 }
 
@@ -167,7 +151,7 @@ fallSpeed():number {
  * 是否 BOSS 波
  */
 isBossWave():boolean {
-  const offset = this.bb!.__offset(this.bb_pos, 30);
+  const offset = this.bb!.__offset(this.bb_pos, 26);
   return offset ? !!this.bb!.readInt8(this.bb_pos + offset) : false;
 }
 
@@ -177,12 +161,12 @@ isBossWave():boolean {
 desc():string|null
 desc(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 desc(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 32);
+  const offset = this.bb!.__offset(this.bb_pos, 28);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 static startWave(builder:flatbuffers.Builder) {
-  builder.startObject(15);
+  builder.startObject(13);
 }
 
 static addId(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset) {
@@ -272,28 +256,20 @@ static startShapeWeightsVector(builder:flatbuffers.Builder, numElems:number) {
   builder.startVector(4, numElems, 4);
 }
 
-static addRowSpawnInterval(builder:flatbuffers.Builder, rowSpawnInterval:number) {
-  builder.addFieldFloat32(9, rowSpawnInterval, 0.0);
-}
-
-static addBandSpawnInterval(builder:flatbuffers.Builder, bandSpawnInterval:number) {
-  builder.addFieldFloat32(10, bandSpawnInterval, 0.0);
-}
-
 static addSpawnStagger(builder:flatbuffers.Builder, spawnStagger:number) {
-  builder.addFieldFloat32(11, spawnStagger, 0.0);
+  builder.addFieldFloat32(9, spawnStagger, 0.0);
 }
 
 static addFallSpeed(builder:flatbuffers.Builder, fallSpeed:number) {
-  builder.addFieldFloat32(12, fallSpeed, 0.0);
+  builder.addFieldFloat32(10, fallSpeed, 0.0);
 }
 
 static addIsBossWave(builder:flatbuffers.Builder, isBossWave:boolean) {
-  builder.addFieldInt8(13, +isBossWave, +false);
+  builder.addFieldInt8(11, +isBossWave, +false);
 }
 
 static addDesc(builder:flatbuffers.Builder, descOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(14, descOffset, 0);
+  builder.addFieldOffset(12, descOffset, 0);
 }
 
 static endWave(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -301,7 +277,7 @@ static endWave(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createWave(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset, levelIdOffset:flatbuffers.Offset, waveIndex:number, mode:number, seed:number, bands:number, qualityWeightsOffset:flatbuffers.Offset, typeWeightsOffset:flatbuffers.Offset, shapeWeightsOffset:flatbuffers.Offset, rowSpawnInterval:number, bandSpawnInterval:number, spawnStagger:number, fallSpeed:number, isBossWave:boolean, descOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createWave(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset, levelIdOffset:flatbuffers.Offset, waveIndex:number, mode:number, seed:number, bands:number, qualityWeightsOffset:flatbuffers.Offset, typeWeightsOffset:flatbuffers.Offset, shapeWeightsOffset:flatbuffers.Offset, spawnStagger:number, fallSpeed:number, isBossWave:boolean, descOffset:flatbuffers.Offset):flatbuffers.Offset {
   Wave.startWave(builder);
   Wave.addId(builder, idOffset);
   Wave.addLevelId(builder, levelIdOffset);
@@ -312,8 +288,6 @@ static createWave(builder:flatbuffers.Builder, idOffset:flatbuffers.Offset, leve
   Wave.addQualityWeights(builder, qualityWeightsOffset);
   Wave.addTypeWeights(builder, typeWeightsOffset);
   Wave.addShapeWeights(builder, shapeWeightsOffset);
-  Wave.addRowSpawnInterval(builder, rowSpawnInterval);
-  Wave.addBandSpawnInterval(builder, bandSpawnInterval);
   Wave.addSpawnStagger(builder, spawnStagger);
   Wave.addFallSpeed(builder, fallSpeed);
   Wave.addIsBossWave(builder, isBossWave);
