@@ -1,0 +1,115 @@
+import { Node, Sprite, SpriteFrame, UITransform, Vec3 } from 'cc';
+import { HitFlash } from './HitFlash';
+import {
+    BOTTOM_LINE_OFFSET,
+    CELL_SIZE,
+    ColorWeights,
+    DESIGN_HEIGHT,
+    DefaultTuning,
+    DifficultyLevel,
+    ENEMY_CORNER_RADIUS,
+    EnemyColor,
+    EnemyShape,
+    EnemyType,
+    GRID_COL_COUNT,
+    GameTuning,
+    IsolateTypes,
+    MAX_WALL_ROWS,
+    ShapeWeights,
+    TypeWeights,
+    getCellSpan,
+    getDifficulty,
+    getEnemyAssetName,
+    getEnemyMaxHp,
+    pickWeighted,
+    scaleEnemyHp,
+} from './GameConfig';
+import { isBigShape, planWave } from './WavePlanner';
+
+/** 波次排布里的一个敌人（尚未实例化），rowOffset 相对本波首行 */
+export interface EnemySpec {
+    color: EnemyColor;
+    shape: EnemyShape;
+    /** 类型：决定行为、掉落、以及"周围是否留空"（见策划案 §26.3） */
+    type: EnemyType;
+    col: number;
+    rowOffset: number;
+}
+
+export type EnemyState = 'falling' | 'diving';
+
+export interface EnemyData {
+    node: Node;
+    color: EnemyColor;
+    shape: EnemyShape;
+    /** 类型：决定行为、掉落、以及"周围是否留空"（见策划案 §26.3） */
+    type: EnemyType;
+    /** 屏幕上的实际包围盒（竖版 double 已把 160x80 折算成 80x160），碰撞用 */
+    width: number;
+    height: number;
+    hp: number;
+    maxHp: number;
+    state: EnemyState;
+    /** 所属行；俯冲之后脱离行，置空 */
+    row: EnemyRow | null;
+    /** 主动攻击玩家的计时器 */
+    attackTimer: number;
+    /** 受击闪白 */
+    flash: HitFlash | null;
+}
+
+/** 敌人墙里的一行，y 是该行上边缘 */
+export interface EnemyRow {
+    y: number;
+    enemies: EnemyData[];
+}
+
+/**
+ * 敌人管理器 — 负责把排布变成敌人、墙下移、俯冲与近身攻击
+ *
+ * 墙的模型：m_Rows 里每行独立存一个 y，每帧统一减去下移速度，
+ * 所以整面墙是刚性下移的。俯冲的敌人会从行里摘出来单独追玩家。
+ *
+ * 排布生成（哪种形状放哪儿、要不要留空）已经抽到 WavePlanner，
+ * 那部分是纯函数、不依赖 cc，可以被无头测试直接覆盖。
+ */
+export class EnemyManager {
+    private m_Root: Node = null;
+    private m_Tuning: GameTuning = DefaultTuning;
+    private m_Frames: Map<string, SpriteFrame> = new Map();
+
+    /** 敌人墙，下标越小越靠上 */
+    private m_Rows: EnemyRow[] = [];
+    /** 已俯冲、脱离墙的敌人 */
+    private m_DivingList: EnemyData[] = [];
+    /** 全部存活敌人，供子弹碰撞遍历 */
+    private m_EnemyList: EnemyData[] = [];
+
+    /** 当前波的排布：[rowOffset][col]；多格敌人的每一格都指向同一个 spec */
+    private m_Block: (EnemySpec | null)[][] = [];
+    /** 当前波下一行待入场的下标 */
+    private m_BlockCursor = 0;
+    /** 已生成的波数，给 HUD 用 */
+    private m_WaveCount = 0;
+    /**
+     * 当前波次的难度快照。只在开新波时刷新，
+     * 这样整面墙的下落速度在一波之内是恒定的（速度突变只发生在波与波之间）。
+     */
+    private m_Difficulty: DifficultyLevel = null;
+
+    private m_BottomLineY = 0;
+    private m_SpawnLineY = 0;
+    private m_BoardLeft = 0;
+
+    init(root: Node, tuning: GameTuning, frames: Map<string, SpriteFrame>): void {
+        this.m_Root = root;
+        this.m_Tuning = tuning;
+        this.m_Frames = frames;
+        this.m_BottomLineY = -DESIGN_HEIGHT * 0.5 + BOTTOM_LINE_OFFSET;
+        // 出生线在屏幕上方一格，敌人从屏幕外走进来
+        this.m_SpawnLineY = DESIGN_HEIGHT * 0.5 + CELL_SIZE;
+        // 棋盘要按格子总宽居中，而不是按屏幕宽：5 格 x 80 = 400，两边各留 175
+        this.m_BoardLeft = -GRID_COL_COUNT * CELL_SIZE * 0.5;
+        // BattleWorld 开局会立刻 generateWave()，这里只是给个合法初值
+        this.m_Difficulty = getDifficulty(1, tuning);
+    }

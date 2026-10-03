@@ -1,0 +1,74 @@
+/** 全部存活敌人（含已俯冲的） */
+    get aliveEnemies(): EnemyData[] {
+        return this.m_EnemyList;
+    }
+
+    /** 已生成的波数 */
+    get waveCount(): number {
+        return this.m_WaveCount;
+    }
+
+    /** 本波还有多少行没入场 */
+    get pendingRowCount(): number {
+        return Math.max(0, this.m_Block.length - this.m_BlockCursor);
+    }
+
+    /** 当前波次的难度（行数区间 / 下落速度 / 血量倍率），给 HUD 和调试用 */
+    get difficulty(): DifficultyLevel {
+        return this.m_Difficulty;
+    }
+
+    /**
+     * 生成一波排布，返回本波行数。已经在场上的敌人不受影响。
+     *
+     * 上一波还有没入场的行时把它们保留在新波前面，避免墙被堆满时静默丢掉敌人
+     * （多格敌人不会跨波，所以按行拼接是安全的）。
+     *
+     * 行数按【本波】的难度取：先自增波次再算难度，所以第 1 波就是基准值。
+     */
+    generateWave(): number {
+        this.m_WaveCount++;
+        this.m_Difficulty = getDifficulty(this.m_WaveCount, this.m_Tuning);
+
+        const min = this.m_Difficulty.rowMin;
+        const max = Math.max(min, this.m_Difficulty.rowMax);
+        const rowCount = min + Math.floor(Math.random() * (max - min + 1));
+        const backlog = this.m_BlockCursor > 0 ? this.m_Block.slice(this.m_BlockCursor) : this.m_Block;
+
+        this.m_Block = backlog.concat(this.generateBlock(rowCount));
+        this.m_BlockCursor = 0;
+        return rowCount;
+    }
+
+    /**
+     * 把本波的下一行追加到墙顶。墙堆满（MAX_WALL_ROWS）时返回 false 让它排队等待。
+     */
+    spawnPendingRow(): boolean {
+        if (this.m_BlockCursor >= this.m_Block.length) return false;
+        if (this.m_Rows.length >= MAX_WALL_ROWS) return false;
+
+        const specs = this.m_Block[this.m_BlockCursor];
+        const rowOffset = this.m_BlockCursor;
+        this.m_BlockCursor++;
+
+        // 新行只能落在墙顶之上，避免和已有行重叠；墙还没让开时自动排队
+        const topY = this.m_Rows.length > 0 ? this.m_Rows[0].y : this.m_SpawnLineY;
+        const y = this.m_Rows.length > 0 ? Math.max(this.m_SpawnLineY, topY + CELL_SIZE) : this.m_SpawnLineY;
+
+        const row: EnemyRow = { y, enemies: [] };
+        this.m_Rows.unshift(row);
+
+        // 血量按【入场那一刻】的难度算：一波的行可能拖到下一波才入场（墙堆满时排队），
+        // 那时它本来就该按新的难度出场，所以这里不缓存生成时的倍率。
+        const hpScale = this.m_Difficulty ? this.m_Difficulty.hpScale : 1;
+
+        for (let col = 0; col < GRID_COL_COUNT; col++) {
+            const spec = specs[col];
+            // 一个 spec 会占住它覆盖的每一个格子，这里只在【锚点格】建节点：
+            // 少了 col 这一项判断的话，横版 double 的两格会各建一次，两个节点完全重叠。
+            // 留空占位符的 col 是 -1，永远不满足条件，所以不会变成敌人。
+            if (!spec || spec.col !== col || spec.rowOffset !== rowOffset) continue;
+            row.enemies.push(this.createEnemy(spec, row, hpScale));
+        }
+        return true;
+    }

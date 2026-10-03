@@ -151,10 +151,17 @@ export const DoubleHpPerCellByColor: Record<EnemyColor, number> = {
     [EnemyColor.Red]: 80,
 };
 
-/** 敌人总血量：single 占一格，double 占两格 */
+/**
+ * 敌人总血量：single 走单格表，其余一律按【每格血量 × 占格数】累加。
+ *
+ * ⚠️ 这里原来是写死的 `* 2`，只对 double 成立。加了 4/6/8 格之后，
+ * 大怪会拿到和 double 完全一样的血量 —— 体型大得多却一样脆，明显不对。
+ * 改成按 getCellSpan 的格数算，以后再加形状不用动这里。
+ */
 export function getEnemyMaxHp(color: EnemyColor, shape: EnemyShape): number {
     if (shape === EnemyShape.Single) return SingleHpByColor[color];
-    return DoubleHpPerCellByColor[color] * 2;
+    const span = getCellSpan(shape);
+    return DoubleHpPerCellByColor[color] * span.colSpan * span.rowSpan;
 }
 
 /**
