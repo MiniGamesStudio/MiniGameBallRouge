@@ -1,8 +1,14 @@
 /**
  * 玩法数值与类型定义 — 弹球 Roguelike Demo
  *
- * 所有可调数值集中在这里；GamePanel 上的 @property 字段会覆盖 DefaultTuning。
- * 改数值优先改这里，不要散落到逻辑里。
+ * ★★ 数值真源：下面的 DefaultTuning 是本项目【唯一】的数值来源。★★
+ *
+ * 历史坑（见策划案 §14.0）：GamePanel 上曾经挂着 22 个同名 @property，prefab 里
+ * 存了另一套值并【静默覆盖】这里 —— 结果是"改 .ts 完全没反应，code review 也看
+ * 不出差异，所有按代码默认值做的平衡推算全部作废"。
+ *
+ * 现已删除那些 @property：要调数值请直接改下面的 DefaultTuning。
+ * Cocos 会热重载脚本，改完直接生效，不需要碰 prefab。
  */
 
 /** 敌人颜色，血量依次递增：green < blue < red */
@@ -177,14 +183,14 @@ export interface GameTuning {
 }
 
 export const DefaultTuning: GameTuning = {
-    waveInterval: 20,
-    waveRowMin: 10,
-    waveRowMax: 20,
+    waveInterval: 30,
+    waveRowMin: 5,
+    waveRowMax: 10,
     rowSpawnInterval: 0.5,
-    enemyFallSpeed: 25,
-    bulletSpeed: 700,
+    enemyFallSpeed: 27,
+    bulletSpeed: 900,
     bulletDamage: 10,
-    fireInterval: 0.5,
+    fireInterval: 0.35,
     bulletCount: 5,
     diveSpeed: 700,
     diveDamage: 20,

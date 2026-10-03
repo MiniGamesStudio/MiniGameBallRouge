@@ -6,6 +6,7 @@ import { CommonBundleName, CommonUIID } from '../CommonUIConfig';
 import { CommonGameProgress } from '../CommonGameProgress';
 import { BattleWorld } from '../gameplay/BattleWorld';
 import { ALL_GAMEPLAY_ASSETS, DefaultTuning, GameTuning, toSpriteFramePath } from '../gameplay/GameConfig';
+import { sanitizeTuning } from '../gameplay/TuningSanitizer';
 import { SkillId, SKILL_DEFS } from '../gameplay/SkillConfig';
 import { SkillLevels } from '../gameplay/SkillSystem';
 const { ccclass, property } = _decorator;
@@ -20,7 +21,12 @@ const SLOT_LABEL_HEIGHT = 30;
 /**
  * 游戏主面板 — 弹球 Roguelike Demo
  *
- * 玩法实现在 gameplay/ 下，这里只负责：装配数值、加载素材、驱动 BattleWorld、面板生命周期。
+ * 玩法实现在 gameplay/ 下，这里只负责：加载素材、驱动 BattleWorld、面板生命周期。
+ *
+ * ⚠️ 这里【故意】不再声明任何数值型 @property。
+ * 历史坑：这些字段曾在 prefab 里存了另一套值并【静默覆盖】GameConfig.DefaultTuning，
+ * 导致改 .ts 不生效、code review 也看不出差异（详见策划案 §14.0）。
+ * 要调玩法数值请改 `GameConfig.DefaultTuning` —— 那是全项目唯一真源。
  */
 @ccclass('GamePanel')
 export class GamePanel extends UIBase {
@@ -37,6 +43,7 @@ export class GamePanel extends UIBase {
     @property(RichText)
     m_LevelText: RichText = null;
 
+    // —— 以下 4 个是"面板自身"的配置，与玩法数值无关，保留在 prefab 里可调 ——
     @property({ tooltip: '默认打开的关卡，从 1 开始' })
     m_StartLevel: number = 1;
     @property({ tooltip: '游戏根节点设计宽度，用于按屏幕分辨率缩放' })
@@ -45,52 +52,6 @@ export class GamePanel extends UIBase {
     m_DesignHeight: number = DESIGN_ROOT_HEIGHT;
     @property({ tooltip: '游戏根节点最大缩放，1 表示不超过设计尺寸（保持清晰），可调大以在大屏铺满' })
     m_GameRootMaxScale: number = 1;
-
-    @property({ tooltip: '【波次】每隔多少秒生成一波敌人（5~10 行）' })
-    m_WaveInterval: number = DefaultTuning.waveInterval;
-    @property({ tooltip: '【波次】单波最少行数' })
-    m_WaveRowMin: number = DefaultTuning.waveRowMin;
-    @property({ tooltip: '【波次】单波最多行数' })
-    m_WaveRowMax: number = DefaultTuning.waveRowMax;
-    @property({ tooltip: '【波次】波内每行敌人入场的间隔（秒）' })
-    m_RowSpawnInterval: number = DefaultTuning.rowSpawnInterval;
-    @property({ tooltip: '【敌人】整面敌人墙的下移速度（像素/秒）' })
-    m_EnemyFallSpeed: number = DefaultTuning.enemyFallSpeed;
-    @property({ tooltip: '【子弹】子弹发射间隔（秒），越小射速越快' })
-    m_FireInterval: number = DefaultTuning.fireInterval;
-    @property({ tooltip: '【子弹】同时在场的子弹总数。子弹撞敌人/撞屏幕四周只反弹，飞回玩家身上才回收' })
-    m_BulletCount: number = DefaultTuning.bulletCount;
-    @property({ tooltip: '【子弹】子弹飞行速度（像素/秒）' })
-    m_BulletSpeed: number = DefaultTuning.bulletSpeed;
-    @property({ tooltip: '【子弹】单发子弹伤害' })
-    m_BulletDamage: number = DefaultTuning.bulletDamage;
-    @property({ tooltip: '【敌人】俯冲玩家的速度（像素/秒）' })
-    m_DiveSpeed: number = DefaultTuning.diveSpeed;
-    @property({ tooltip: '【敌人】俯冲命中玩家扣的血量' })
-    m_DiveDamage: number = DefaultTuning.diveDamage;
-    @property({ tooltip: '【敌人】俯冲命中判定半径' })
-    m_DiveHitRadius: number = DefaultTuning.diveHitRadius;
-    @property({ tooltip: '【敌人】主动攻击玩家的触发距离' })
-    m_EnemyAttackRange: number = DefaultTuning.enemyAttackRange;
-    @property({ tooltip: '【敌人】主动攻击的间隔（秒）' })
-    m_EnemyAttackInterval: number = DefaultTuning.enemyAttackInterval;
-    @property({ tooltip: '【敌人】每次攻击扣的血量' })
-    m_EnemyAttackDamage: number = DefaultTuning.enemyAttackDamage;
-    @property({ tooltip: '【玩家】最大血量' })
-    m_PlayerMaxHp: number = DefaultTuning.playerMaxHp;
-
-    @property({ tooltip: '【难度】每过一波，单波行数的增量（0.5 = 每两波多一行），第 1 波是基准' })
-    m_DifficultyRowPerWave: number = DefaultTuning.difficultyRowPerWave;
-    @property({ tooltip: '【难度】单波行数上限。要 >= 单波最多行数，否则会把行数压到比基准还少' })
-    m_DifficultyRowMax: number = DefaultTuning.difficultyRowMax;
-    @property({ tooltip: '【难度】每过一波，敌人下落速度的增幅（0.08 = 每波 +8%）' })
-    m_DifficultySpeedGrowth: number = DefaultTuning.difficultySpeedGrowth;
-    @property({ tooltip: '【难度】下落速度倍率上限' })
-    m_DifficultySpeedMax: number = DefaultTuning.difficultySpeedMax;
-    @property({ tooltip: '【难度】每过一波，敌人血量的增幅（0.12 = 每波 +12%）' })
-    m_DifficultyHpGrowth: number = DefaultTuning.difficultyHpGrowth;
-    @property({ tooltip: '【难度】血量倍率上限' })
-    m_DifficultyHpMax: number = DefaultTuning.difficultyHpMax;
 
     private m_CurrentLevel: number = 1;
     private m_IsPaused: boolean = false;
@@ -196,36 +157,19 @@ export class GamePanel extends UIBase {
         return frames;
     }
 
+    /**
+     * 取本局的数值。
+     *
+     * 现在只做两件事：读唯一真源 + 钳制合法性。不再从 prefab 读任何数值字段
+     * （历史坑见类注释与策划案 §14.0）。
+     *
+     * 顺便打一行生效值日志：这个坑之所以能藏那么久，就是因为没有任何地方能看到
+     * "当前生效的到底是哪一套数"。留一行日志，下次 divergence 会立刻暴露。
+     */
     private buildTuning(): GameTuning {
-        return {
-            waveInterval: Math.max(1, this.m_WaveInterval),
-            waveRowMin: Math.max(1, Math.floor(this.m_WaveRowMin)),
-            waveRowMax: Math.max(1, Math.floor(this.m_WaveRowMax)),
-            rowSpawnInterval: Math.max(0.02, this.m_RowSpawnInterval),
-            enemyFallSpeed: Math.max(1, this.m_EnemyFallSpeed),
-            bulletSpeed: Math.max(1, this.m_BulletSpeed),
-            bulletDamage: Math.max(1, this.m_BulletDamage),
-            fireInterval: Math.max(0.02, this.m_FireInterval),
-            bulletCount: Math.max(1, Math.floor(this.m_BulletCount)),
-            diveSpeed: Math.max(1, this.m_DiveSpeed),
-            diveDamage: Math.max(0, this.m_DiveDamage),
-            diveHitRadius: Math.max(1, this.m_DiveHitRadius),
-            enemyAttackRange: Math.max(0, this.m_EnemyAttackRange),
-            enemyAttackInterval: Math.max(0.05, this.m_EnemyAttackInterval),
-            enemyAttackDamage: Math.max(0, this.m_EnemyAttackDamage),
-            playerMaxHp: Math.max(1, this.m_PlayerMaxHp),
-            difficultyRowPerWave: Math.max(0, this.m_DifficultyRowPerWave),
-            // 上限至少要跟得上基准行数，否则难度曲线会反过来削减行数
-            difficultyRowMax: Math.max(
-                Math.max(1, Math.floor(this.m_WaveRowMax)),
-                Math.floor(this.m_DifficultyRowMax),
-            ),
-            difficultySpeedGrowth: Math.max(0, this.m_DifficultySpeedGrowth),
-            // 倍率下限锁在 1：小于 1 会变成"越往后越简单"
-            difficultySpeedMax: Math.max(1, this.m_DifficultySpeedMax),
-            difficultyHpGrowth: Math.max(0, this.m_DifficultyHpGrowth),
-            difficultyHpMax: Math.max(1, this.m_DifficultyHpMax),
-        };
+        const tuning = sanitizeTuning(DefaultTuning);
+        console.log('[GameConfig] 本局生效数值 =', JSON.stringify(tuning));
+        return tuning;
     }
 
     private disposeBattle(): void {
