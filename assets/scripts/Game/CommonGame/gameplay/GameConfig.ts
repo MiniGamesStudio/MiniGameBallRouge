@@ -18,12 +18,64 @@ export enum EnemyColor {
     Red = 2,
 }
 
-/** 敌人形状：单格 / 横版双格 / 竖版双格（图片旋转 90°） */
+/**
+ * 敌人形状：单格 / 横版双格 / 竖版双格（图片旋转 90°）/ 四格 / 六格 / 八格。
+ *
+ * ★ 所有形状的 rowSpan 一律 ≤ 2，这是整个排布模型的地基：
+ *   只要不超过 2 行，敌人就绝不会跨"带"，现有"逐行入场 + 把跨度写进占据位图"
+ *   的机制就完全够用，不需要重写（详见策划案 §26.10）。
+ *   若要加 2×4（竖版八格）这种 4 行高的形状，跨行假设会失效，必须同步改排布逻辑。
+ *
+ * 枚举值保持历史数值不变（0/1/2），新形状追加在后面 ——
+ * 避免动到任何按值索引的地方。占格数请用 getCellSpan 算，不要用枚举值当格数。
+ */
 export enum EnemyShape {
     Single = 0,
     DoubleH = 1,
     DoubleV = 2,
+    Quad = 3,
+    Hexa = 4,
+    Octa = 5,
 }
+
+/**
+ * 敌人类型：普通 / 精英 / 小BOSS / 大BOSS。
+ *
+ * 与形状【正交】：形状决定占几格，类型决定行为、掉落、以及是否"周围留空"。
+ * "是否攻击"由类型决定 —— 普通默认不攻击，精英以上才带攻击手段（见策划案 §26.3）。
+ */
+export enum EnemyType {
+    Normal = 0,
+    Elite = 1,
+    MiniBoss = 2,
+    Boss = 3,
+}
+
+/**
+ * 类型随机权重。
+ *
+ * 默认只有普通会自然刷出（其余为 0）—— 这是刻意的：**默认行为与改动前完全一致**，
+ * 精英/BOSS 留给"关卡配置显式摆放"或策划手动调权重。
+ * 想让 BOSS 随机出现（并看到留空效果），把 Boss/MiniBoss 调成 > 0 即可。
+ */
+export const TypeWeights: Record<EnemyType, number> = {
+    [EnemyType.Normal]: 1,
+    [EnemyType.Elite]: 0,
+    [EnemyType.MiniBoss]: 0,
+    [EnemyType.Boss]: 0,
+};
+
+/**
+ * 需要"周围留空"的敌人类型。
+ *
+ * 留空 = 在这些敌人占格的外圈写入占位符，后续填充会跳过 → 墙上出现缺口，
+ * 子弹可以从缺口穿过去撞底墙回弹。既让 BOSS 在墙里孤立突出，
+ * 也是一个实打实的玩法差异（多了"穿透路径"）。
+ *
+ * **留空 / 不留空都可以**：改这个数组即可，清空数组 = 完全不陪空。
+ * 注意：只有类型落在本数组、且该类型权重 > 0 时才会实际发生。
+ */
+export const IsolateTypes: EnemyType[] = [EnemyType.MiniBoss, EnemyType.Boss];
 
 /** 每行格子数 */
 export const GRID_COL_COUNT = 5;
@@ -105,10 +157,18 @@ export function getEnemyMaxHp(color: EnemyColor, shape: EnemyShape): number {
     return DoubleHpPerCellByColor[color] * 2;
 }
 
-/** 敌人占用的格子数：横版 double 占 2 列，竖版 double 占 2 行 */
+/**
+ * 敌人占用的格子数（列跨度 × 行跨度）。
+ *
+ * 所有形状的 rowSpan 都是 1 或 2 —— 排布模型依赖这个前提（见 EnemyShape 注释）。
+ * 8 格占 4 列，在 5 列棋盘里只剩 1 列余量，这是有意设计的"霸屏怪"。
+ */
 export function getCellSpan(shape: EnemyShape): { colSpan: number; rowSpan: number } {
     if (shape === EnemyShape.DoubleH) return { colSpan: 2, rowSpan: 1 };
     if (shape === EnemyShape.DoubleV) return { colSpan: 1, rowSpan: 2 };
+    if (shape === EnemyShape.Quad) return { colSpan: 2, rowSpan: 2 };
+    if (shape === EnemyShape.Hexa) return { colSpan: 3, rowSpan: 2 };
+    if (shape === EnemyShape.Octa) return { colSpan: 4, rowSpan: 2 };
     return { colSpan: 1, rowSpan: 1 };
 }
 
@@ -119,15 +179,27 @@ export const ColorWeights: Record<EnemyColor, number> = {
     [EnemyColor.Red]: 1,
 };
 
-/** 形状随机权重：单格最常见 */
+/**
+ * 形状随机权重：单格最常见，越大越稀有。
+ *
+ * ⚠️ 权重大 ≠ 出现得多。逐行从左到右扫描时，形状只有落在"对齐且放得下"的位置
+ * 才可能被选中，越宽的位置越少 —— 所以 6/8 格额外靠"大怪优先"那一趟保证出场率
+ * （见 EnemyManager.generateBlock 与策划案 §26.10 第 5 条）。
+ */
 export const ShapeWeights: Record<EnemyShape, number> = {
     [EnemyShape.Single]: 6,
     [EnemyShape.DoubleH]: 3,
     [EnemyShape.DoubleV]: 3,
+    [EnemyShape.Quad]: 2,
+    [EnemyShape.Hexa]: 1,
+    [EnemyShape.Octa]: 1,
 };
 
 /**
- * 玩法可调数值。GamePanel 会把编辑器里配好的值组装成这个结构传给 BattleWorld。
+ * 玩法可调数值。唯一实例是下面的 DefaultTuning —— 那是全项目数值真源。
+ *
+ * GamePanel 不再从 prefab 读任何数值（历史坑见策划案 §14.0），
+ * 传入 BattleWorld 前只经过 TuningSanitizer.sanitizeTuning() 钳制。
  */
 export interface GameTuning {
     /** 每隔多少秒生成一波敌人（5~10 行） */
