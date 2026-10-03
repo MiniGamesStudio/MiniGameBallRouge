@@ -1,0 +1,60 @@
+// 自动生成的 FlatBuffers Schema 文件
+// 源工作表: Enemy
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Enemy 单条记录
+table Enemy {
+  /// 敌人 ID（关卡行模板里引用它）
+  id:string;
+  /// 显示名
+  name:string;
+  /// 品质 0白 1绿 2蓝 3紫 4金 5红
+  quality:byte;
+  /// 类型 0普通 1精英 2小BOSS 3大BOSS
+  type:byte;
+  /// 体型 0单格 1双格横 2双格竖 3四格 4六格 5八格
+  shape:byte;
+  /// 贴图名（零美术方案：按品质染色）
+  asset:string;
+  /// 额外血量倍率（默认 1，血量主要走品质表）
+  hpMul:float32;
+  /// 是否攻击（普通怪默认 FALSE）
+  attackEnabled:bool;
+  /// 手段 0无 1射箭 2子弹 3激光 4直线冲击
+  attackKind:byte;
+  /// 触发距离 px（玩家进入才攻击）
+  attackRange:int32;
+  /// 攻击间隔 秒
+  attackInterval:float32;
+  /// 单次伤害
+  attackDamage:int32;
+  /// 预警时长 秒（除子弹外必须 > 0）
+  attackWindup:float32;
+  /// 弹速/冲刺速度 px/s
+  attackSpeed:int32;
+  /// 连发数（扇形子弹用）
+  attackCount:int32;
+  /// 发散角 度（扇形子弹用）
+  attackSpreadDeg:float32;
+  /// BOSS：停下移动释放技能
+  stopToCast:bool;
+  /// 停下时长 秒
+  castDuration:float32;
+  /// 经验倍率（普通1 精英3 小BOSS8 大BOSS20）
+  expMul:float32;
+  /// 金币倍率
+  coinMul:float32;
+  /// 随机生成权重（BOSS 一般由关卡指定，权重给 0）
+  weight:int32;
+  /// 备注
+  desc:string;
+}
+
+/// Enemy 记录列表
+table EnemyList {
+  items:[Enemy];
+}
+
+root_type EnemyList;

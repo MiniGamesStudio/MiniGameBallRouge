@@ -1,0 +1,34 @@
+// 自动生成的 FlatBuffers Schema 文件
+// 源工作表: Skin
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Skin 单条记录
+table Skin {
+  /// 皮肤 ID
+  id:string;
+  /// 名称
+  name:string;
+  /// 资源名
+  asset:string;
+  /// 获取方式 0默认拥有 1魂晶兑换 2召唤
+  unlock:byte;
+  /// 兑换消耗魂晶（召唤皮肤填 0）
+  cost:int32;
+  /// 属性加成目标（留空 = 纯外观）
+  bonusTarget:string;
+  /// 运算 0加法 1乘法
+  bonusOp:byte;
+  /// 加成数值（建议 ≤ 0.05）
+  bonusValue:float32;
+  /// 备注
+  desc:string;
+}
+
+/// Skin 记录列表
+table SkinList {
+  items:[Skin];
+}
+
+root_type SkinList;

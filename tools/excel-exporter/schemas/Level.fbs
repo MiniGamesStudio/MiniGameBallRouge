@@ -1,0 +1,30 @@
+// 自动生成的 FlatBuffers Schema 文件
+// 源工作表: Level
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Level 单条记录
+table Level {
+  /// 关卡 ID
+  id:string;
+  /// 关卡名
+  name:string;
+  /// 随机种子（0 = 不使用随机）
+  seed:int32;
+  /// 是否无尽（波次按难度公式持续生成）
+  isEndless:bool;
+  /// 关卡级血量倍率
+  hpMul:float32;
+  /// 关卡级速度倍率
+  speedMul:float32;
+  /// 备注
+  desc:string;
+}
+
+/// Level 记录列表
+table LevelList {
+  items:[Level];
+}
+
+root_type LevelList;

@@ -1,0 +1,28 @@
+// 自动生成的 FlatBuffers Schema 文件
+// 源工作表: Row
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Row 单条记录
+table Row {
+  /// 行 ID
+  id:string;
+  /// 所属关卡
+  levelId:string;
+  /// 所属波次
+  waveIndex:int32;
+  /// 行序号（0 = 最先进场）
+  rowIndex:int32;
+  /// 行模板：5 槽位用 | 分隔；defId=锚点格、-=被相邻锚点占用的格（同行左侧或上一行）、_=空列
+  template:string;
+  /// 备注
+  desc:string;
+}
+
+/// Row 记录列表
+table RowList {
+  items:[Row];
+}
+
+root_type RowList;

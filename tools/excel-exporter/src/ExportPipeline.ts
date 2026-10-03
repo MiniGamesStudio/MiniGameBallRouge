@@ -26,6 +26,8 @@ export interface ExportOptions {
     schemaDir: string;
     /** flatc 编译器路径 */
     flatcPath: string;
+    /** TypeScript 访问器输出目录（默认 <outputDir>/generated） */
+    tsOutDir: string;
     /** 是否强制导出（忽略增量检测和兼容性检查） */
     force: boolean;
 }
@@ -76,6 +78,10 @@ export class ExportPipeline {
     private options: ExportOptions;
     private registry: SchemaRegistry;
     private compiler: SchemaCompiler;
+    /** 本次运行生成的全部 .fbs 路径（供统计/排查用） */
+    private schemaFiles: string[] = [];
+    /** 本次运行解析出的全部工作表（最后合并成一个 schema 编译 TS） */
+    private allSheets: SheetData[] = [];
 
     constructor(options: ExportOptions) {
         this.options = options;
@@ -114,6 +120,9 @@ export class ExportPipeline {
             const result = this.processFile(filePath, fileName);
             results.push(result);
         }
+
+        // 2.5 统一生成 TypeScript 访问器
+        this.compileSchemas();
 
         // 3. 保存注册表
         this.registry.save();
@@ -186,6 +195,8 @@ export class ExportPipeline {
                 };
             }
 
+            this.allSheets.push(...sheets);
+
             let totalRows = 0;
             let allSuccess = true;
 
@@ -245,20 +256,8 @@ export class ExportPipeline {
             return false;
         }
 
-        // 2f. 编译 Schema → TypeScript（如果 flatc 可用）
-        if (this.compiler.isAvailable()) {
-            const compileResults = this.compiler.compileAll(
-                schemaInfos.map(s => s.filePath),
-                path.join(this.options.outputDir, 'generated')
-            );
-            const compileFailed = compileResults.filter(r => !r.success);
-            if (compileFailed.length > 0) {
-                console.warn(`  ⚠️  ${tableName}: Schema 编译失败（flatc），跳过 TypeScript 生成`);
-                // 编译失败不阻止二进制导出
-            }
-        } else {
-            console.warn(`  ⚠️  flatc 不可用，跳过 TypeScript 代码生成`);
-        }
+        // 2f. 收集 Schema 路径（统一在所有表处理完后编译一次，见 compileSchemas）
+        this.schemaFiles.push(...schemaInfos.map(s => s.filePath));
 
         // 2g. 导出二进制数据
         const exportResult = BinaryExporter.export(sheet, this.options.outputDir);
@@ -276,6 +275,47 @@ export class ExportPipeline {
         );
 
         return true;
+    }
+
+    /**
+     * 生成 TypeScript 访问器
+     *
+     * 关键：全部表要**合并成一个 schema 文件**再交给 flatc。
+     * flatc 25.x 的 --ts 输出按 namespace 组织（config.ts 出口文件 + config/ 目录），
+     * 每张表各写一个 `namespace Config` 的 .fbs 时，无论分几次调用，
+     * 出口文件都只会保留最后一次输入的表（实测 13 个 .fbs 只剩 1 张表）。
+     *
+     * 编译失败不阻止二进制导出 —— .bin 此时已经写好了。
+     */
+    private compileSchemas(): void {
+        if (this.allSheets.length === 0) return;
+
+        const generatedDir = this.options.tsOutDir || path.join(this.options.outputDir, 'generated');
+
+        if (!this.compiler.isAvailable()) {
+            console.warn(
+                `  ⚠️  flatc 不可用（${this.options.flatcPath}），跳过 TypeScript 访问器生成；` +
+                `二进制配置不受影响`
+            );
+            return;
+        }
+
+        const combinedPath = SchemaGenerator.generateCombined(
+            this.allSheets,
+            this.options.schemaDir
+        );
+
+        const results = this.compiler.compileAll([combinedPath], generatedDir);
+        const failed = results.filter(r => !r.success).length;
+
+        if (failed > 0) {
+            console.warn(`  ⚠️  TypeScript 访问器生成失败（不影响二进制配置）`);
+        } else {
+            console.log(
+                `  🧩 TypeScript 访问器: ${this.allSheets.length} 张表 → ${generatedDir}` +
+                `（合并 schema: ${path.basename(combinedPath)}）`
+            );
+        }
     }
 
     /**

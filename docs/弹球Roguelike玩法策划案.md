@@ -1142,11 +1142,11 @@ interface GameTuning {
 启动
   ↓
 读取 Excel 源表（tools/excel-config/*.xlsx）
-  ↓ 导出管线：生成 .fbs Schema → flatc 编译 → 生成 Binary 配置
+  ↓ 导出管线：读取 Excel → 生成 .fbs Schema → 构建 .bin（flatc 另外生成 TS 访问器，见 §17.3）
   ↓
 游戏运行时加载 Binary 配置（或 TS 数据模块，二选一，见下）
   ↓
-注册配置访问器（ConfigTables.registerConfigAccessors()）
+注册配置访问器（`ConfigManager.registerAccessor('Enemy', new EnemyConfigAccessor(buffer))`，访问器由 flatc 生成，接线见 §17.3）
   ↓
 校验：主键唯一、权重非负、枚举合法、必填字段非空
   ↓ 校验失败 → 记录错误码 + 回退默认配置（不允许崩在战斗里）
@@ -1220,7 +1220,7 @@ table EnemyList { items:[Enemy]; }             // 记录列表（客户端读的
 root_type EnemyList;
 ```
 
-**实测结论（2026-10-03 用真实导出器跑通）**：8 个模板 / 13 张表全部导出成功（0 失败），产出 13 个 `.fbs` + 13 个 `.bin`；`flatc` 缺失只影响 TypeScript 代码生成（会打印警告并跳过），不影响二进制导出。
+**实测结论（2026-10-03 用真实导出器跑通）**：8 个模板 / 13 张表全部导出成功（0 失败），产出 13 个 `.bin`（另有单表 `.fbs`）；`flatc` 缺失只影响 TypeScript 访问器生成（打印警告并跳过），不影响二进制导出。完整命令、产物位置与客户端接线见 §17.3。
 
 ### 17.2 已生成的模板文件
 
@@ -1243,10 +1243,56 @@ root_type EnemyList;
 cd tools/excel-exporter
 npm install
 npm run build
-npm run export-config        # 读取 ../excel-config/*.xlsx → 生成 Schema → 编译 → 输出 Binary
+
+# 正式导出：Excel → .fbs → .bin（并调用 flatc 生成 TypeScript 访问器）
+node dist/index.js \
+  --source ../excel-config \
+  --output ../../assets/resources/config/roguelike \
+  --schema ./schemas \
+  --ts     ./generated \
+  --flatc  "C:\MyWork\flatc\flatc.exe" \
+  --force
 ```
 
-**输出**：`assets/resources/config/roguelike/`（由 `tools/excel-exporter/config.json` 指定）
+（`npm run export-config` 是同一件事的快捷方式，路径取自 `config.json`；`flatc` 不在 PATH 时用 `--flatc` 指定，或改 `config.json` 的 `flatcPath`。加 `--force` 忽略增量与兼容性检查，不加则只导出改动过的表。）
+
+**产物与位置**：
+
+| 产物 | 位置 | 数量 |
+|---|---|---|
+| 二进制配置 `.bin` | `assets/resources/config/roguelike/` | 13 |
+| Schema：单表 `.fbs` + 合并 `config.fbs` + 变更注册表 | `tools/excel-exporter/schemas/` | 14 + 1 |
+| TypeScript 访问器：出口 `config.ts` + `config/*.ts` | `tools/excel-exporter/generated/` | 1 + 26 |
+
+**实测（2026-10-03，flatc 25.12.19）**：8 个模板 / 13 张表全部导出成功（0 失败），二进制 + 访问器一次产出；生成的访问器用 `tsc --noEmit` 类型检查通过。
+
+**flatc 25.x 的四个坑（导出器已适配，换工具链时注意）**：
+
+| 坑 | 现象 | 处理 |
+|---|---|---|
+| `///` 注释不能写在行尾 | `error: a documentation comment should be on a line on its own`，整个 schema 编译失败 | 生成器把注释单独成行（顺带让注释进了访问器的 JSDoc） |
+| 一个 namespace 的出口文件会被逐文件覆盖 | 13 个 `.fbs` 分开编译，`config.ts` 里只剩最后一张表（实测只剩 `Tuning`/`Wave`） | 编译前把全部表**合并成一个 `config.fbs`** 再交给 flatc |
+| 字段名 camelCase 会有告警 | `warning: field names should be lowercase snake_case, got: enemyId` | 只是告警、不阻断；表格与客户端统一用 camelCase，接受这些告警 |
+| `enum:名字` 不生成枚举类型 | 一律落成 `byte`（见 §17.1） | 枚举值含义写在注释行，客户端自己映射 |
+
+**客户端接线（还没做，等玩法代码落地）**：生成的访问器 `import * as flatbuffers from 'flatbuffers'`，所以项目要先有运行时依赖：
+
+```bash
+npm i flatbuffers          # 在 Cocos 项目根目录
+```
+
+用的时候（`EnemyList` 才是 `.bin` 的根）：
+
+```ts
+import * as flatbuffers from 'flatbuffers';
+import { EnemyList } from './generated/config';
+
+const bytes = await loadBinary('config/roguelike/Enemy');
+const list = EnemyList.getRootAsEnemyList(new flatbuffers.ByteBuffer(new Uint8Array(bytes)));
+for (let i = 0; i < list.itemsLength(); i++) { /* list.items(i) → 一条敌人配置 */ }
+```
+
+> ⚠️ 项目自带的 `assets/scripts/engine/FlatBuffersRuntime.ts` **不能**直接喂给生成的访问器：它只提供文件加载和一个最简 `ByteBuffer`（`bytes/dataView/position`），没有 `readInt32/__offset/__string` 这些读取 API。二者要么合并（让 `FlatBuffersRuntime` 返回官方 `flatbuffers.ByteBuffer`），要么直接改用官方运行时。**这一条必须在写玩法代码前定下来。**
 
 ### 17.4 模板的生成与自检（配套脚本）
 

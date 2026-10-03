@@ -1,0 +1,34 @@
+// 自动生成的 FlatBuffers Schema 文件
+// 源工作表: Boss_Phase
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Boss_Phase 单条记录
+table BossPhase {
+  /// 关联 Enemy.id
+  enemyId:string;
+  /// 阶段序号 1/2/3
+  phaseIndex:int32;
+  /// 该阶段血量上限比例（1.0 / 0.66 / 0.33）
+  hpThreshold:float32;
+  /// 下移速度倍率（阶段越后越快）
+  speedScale:float32;
+  /// 攻击间隔倍率（越小越狂暴）
+  intervalScale:float32;
+  /// 本阶段可用手段，如 [1,4]
+  attackKinds:[int32];
+  /// 召唤的小怪 ID（可空）
+  summonDefId:string;
+  /// 召唤数量
+  summonCount:int32;
+  /// 备注
+  desc:string;
+}
+
+/// Boss_Phase 记录列表
+table BossPhaseList {
+  items:[BossPhase];
+}
+
+root_type BossPhaseList;

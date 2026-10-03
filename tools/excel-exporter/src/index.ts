@@ -46,6 +46,7 @@ program
     .option('-o, --output <dir>', '二进制输出目录')
     .option('-S, --schema <dir>', 'Schema 输出目录')
     .option('-f, --flatc <path>', 'flatc 编译器路径', 'flatc')
+    .option('-t, --ts <dir>', 'TypeScript 访问器输出目录（默认 <输出目录>/generated）')
     .option('--force', '强制导出（忽略增量检测和兼容性检查）', false)
     .option('-c, --config <path>', '配置文件路径', DEFAULT_CONFIG_PATH)
     .action(async (opts) => {
@@ -58,6 +59,11 @@ program
             outputDir: resolvePath(opts.output || config.outputDir || '../../assets/resources/config/roguelike'),
             schemaDir: resolvePath(opts.schema || config.schemaDir || './schemas'),
             flatcPath: opts.flatc || config.flatcPath || 'flatc',
+            tsOutDir: resolvePath(
+                opts.ts ||
+                config.tsOutDir ||
+                path.join(opts.output || config.outputDir || '../../assets/resources/config/roguelike', 'generated')
+            ),
             force: opts.force || false,
         };
 
@@ -67,6 +73,7 @@ program
         console.log(`  输出目录:   ${options.outputDir}`);
         console.log(`  Schema 目录: ${options.schemaDir}`);
         console.log(`  flatc 路径:  ${options.flatcPath}`);
+        console.log(`  TS 输出目录: ${options.tsOutDir}`);
         console.log(`  强制模式:    ${options.force ? '是' : '否'}`);
         console.log('─'.repeat(40));
 

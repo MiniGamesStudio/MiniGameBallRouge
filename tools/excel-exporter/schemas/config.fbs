@@ -1,0 +1,38 @@
+// 自动生成的 FlatBuffers Schema 文件（全部配置表合并）
+// 源工作表: Meta_Point
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Meta_Point 单条记录
+table MetaPoint {
+  /// 节点 ID
+  id:string;
+  /// 名称
+  name:string;
+  /// 描述
+  desc:string;
+  /// 图标
+  icon:string;
+  /// 等级上限
+  maxLevel:int32;
+  /// 效果目标（与 SkillEffect.target 同一套命名）
+  effectTarget:string;
+  /// 运算 0加法 1乘法
+  effectOp:byte;
+  /// 每级效果
+  effectPerLevel:float32;
+  /// 成本系数（默认 2）
+  costBase:float32;
+  /// 成本指数（默认 1.4）
+  costPow:float32;
+  /// 面板排序
+  sortOrder:int32;
+}
+
+/// Meta_Point 记录列表
+table MetaPointList {
+  items:[MetaPoint];
+}
+
+root_type MetaPointList;

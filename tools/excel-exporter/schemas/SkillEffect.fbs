@@ -1,0 +1,30 @@
+// 自动生成的 FlatBuffers Schema 文件
+// 源工作表: Skill_Effect
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Skill_Effect 单条记录
+table SkillEffect {
+  /// 关联 Skill.id
+  skillId:string;
+  /// 作用目标，如 bulletDamage / fireInterval / chainTargets / magnetRadius
+  target:string;
+  /// 运算 0加法 1乘法（乘法填 0.2 表示 +20%）
+  op:byte;
+  /// 每级增量
+  perLevel:float32;
+  /// 基础加成（Lv.0 也生效，可空填 0）
+  base:float32;
+  /// 该效果封顶（0 = 不封顶）
+  cap:float32;
+  /// 备注
+  desc:string;
+}
+
+/// Skill_Effect 记录列表
+table SkillEffectList {
+  items:[SkillEffect];
+}
+
+root_type SkillEffectList;

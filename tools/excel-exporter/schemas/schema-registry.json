@@ -1,0 +1,652 @@
+{
+  "version": 1,
+  "entries": {
+    "Drop": {
+      "tableName": "Drop",
+      "contentHash": "19e87b98c8dbff21836149b3367554ff4cdcbb4e6de16b3e4a39969d88fe4641",
+      "lastExportTime": "2026-10-03T13:49:42.365Z",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "sourceKind",
+          "type": "enum:DropSource"
+        },
+        {
+          "name": "sourceId",
+          "type": "string"
+        },
+        {
+          "name": "kind",
+          "type": "enum:DropKind"
+        },
+        {
+          "name": "chance",
+          "type": "float"
+        },
+        {
+          "name": "amountMin",
+          "type": "int"
+        },
+        {
+          "name": "amountMax",
+          "type": "int"
+        },
+        {
+          "name": "scatterRadius",
+          "type": "float"
+        },
+        {
+          "name": "magnetRadius",
+          "type": "int"
+        },
+        {
+          "name": "lifeTime",
+          "type": "float"
+        },
+        {
+          "name": "value",
+          "type": "int"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "Quality": {
+      "tableName": "Quality",
+      "contentHash": "1c67eff84d3064258b86537cc340db1f81cf83a5e92ca11adee9dc808245f592",
+      "lastExportTime": "2026-10-03T13:49:42.370Z",
+      "fields": [
+        {
+          "name": "quality",
+          "type": "enum:EnemyQuality"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "colorHex",
+          "type": "string"
+        },
+        {
+          "name": "hpPerCell",
+          "type": "int"
+        },
+        {
+          "name": "weight",
+          "type": "int"
+        },
+        {
+          "name": "exp",
+          "type": "int"
+        },
+        {
+          "name": "coin",
+          "type": "int"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "Enemy": {
+      "tableName": "Enemy",
+      "contentHash": "22bf3cf052c8ab21f62444e12194c8cbadb08efc4f17f8e3add8550156b60848",
+      "lastExportTime": "2026-10-03T13:49:42.371Z",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "quality",
+          "type": "enum:EnemyQuality"
+        },
+        {
+          "name": "type",
+          "type": "enum:EnemyType"
+        },
+        {
+          "name": "shape",
+          "type": "enum:EnemyShape"
+        },
+        {
+          "name": "asset",
+          "type": "string"
+        },
+        {
+          "name": "hpMul",
+          "type": "float"
+        },
+        {
+          "name": "attackEnabled",
+          "type": "bool"
+        },
+        {
+          "name": "attackKind",
+          "type": "enum:EnemyAttackKind"
+        },
+        {
+          "name": "attackRange",
+          "type": "int"
+        },
+        {
+          "name": "attackInterval",
+          "type": "float"
+        },
+        {
+          "name": "attackDamage",
+          "type": "int"
+        },
+        {
+          "name": "attackWindup",
+          "type": "float"
+        },
+        {
+          "name": "attackSpeed",
+          "type": "int"
+        },
+        {
+          "name": "attackCount",
+          "type": "int"
+        },
+        {
+          "name": "attackSpreadDeg",
+          "type": "float"
+        },
+        {
+          "name": "stopToCast",
+          "type": "bool"
+        },
+        {
+          "name": "castDuration",
+          "type": "float"
+        },
+        {
+          "name": "expMul",
+          "type": "float"
+        },
+        {
+          "name": "coinMul",
+          "type": "float"
+        },
+        {
+          "name": "weight",
+          "type": "int"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "BossPhase": {
+      "tableName": "BossPhase",
+      "contentHash": "4f4f6912d0e5d5a99a281cdb7ca5cb773e1fe8c5a8f7ade36b1d68d46c48473b",
+      "lastExportTime": "2026-10-03T13:49:42.372Z",
+      "fields": [
+        {
+          "name": "enemyId",
+          "type": "string"
+        },
+        {
+          "name": "phaseIndex",
+          "type": "int"
+        },
+        {
+          "name": "hpThreshold",
+          "type": "float"
+        },
+        {
+          "name": "speedScale",
+          "type": "float"
+        },
+        {
+          "name": "intervalScale",
+          "type": "float"
+        },
+        {
+          "name": "attackKinds",
+          "type": "array:int"
+        },
+        {
+          "name": "summonDefId",
+          "type": "string"
+        },
+        {
+          "name": "summonCount",
+          "type": "int"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "Level": {
+      "tableName": "Level",
+      "contentHash": "7aea2274780caa55d409c6c571272aa3424afab26319f91521ae30dbbf5cf1e8",
+      "lastExportTime": "2026-10-03T13:49:42.379Z",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "seed",
+          "type": "int"
+        },
+        {
+          "name": "isEndless",
+          "type": "bool"
+        },
+        {
+          "name": "hpMul",
+          "type": "float"
+        },
+        {
+          "name": "speedMul",
+          "type": "float"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "Wave": {
+      "tableName": "Wave",
+      "contentHash": "f49863e9d430572d67e96622c9e0a6b2efa5210063a1e776db05e7ec6078f7ec",
+      "lastExportTime": "2026-10-03T13:49:42.380Z",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "levelId",
+          "type": "string"
+        },
+        {
+          "name": "waveIndex",
+          "type": "int"
+        },
+        {
+          "name": "mode",
+          "type": "enum:WaveMode"
+        },
+        {
+          "name": "seed",
+          "type": "int"
+        },
+        {
+          "name": "bands",
+          "type": "int"
+        },
+        {
+          "name": "qualityWeights",
+          "type": "array:int"
+        },
+        {
+          "name": "typeWeights",
+          "type": "array:int"
+        },
+        {
+          "name": "shapeWeights",
+          "type": "array:int"
+        },
+        {
+          "name": "rowSpawnInterval",
+          "type": "float"
+        },
+        {
+          "name": "bandSpawnInterval",
+          "type": "float"
+        },
+        {
+          "name": "spawnStagger",
+          "type": "float"
+        },
+        {
+          "name": "fallSpeed",
+          "type": "float"
+        },
+        {
+          "name": "isBossWave",
+          "type": "bool"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "Row": {
+      "tableName": "Row",
+      "contentHash": "d8f4f8a1dbd398efd9dd407b60d813ce696d02cdc902a3eb05bd1332bde158c9",
+      "lastExportTime": "2026-10-03T13:49:42.381Z",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "levelId",
+          "type": "string"
+        },
+        {
+          "name": "waveIndex",
+          "type": "int"
+        },
+        {
+          "name": "rowIndex",
+          "type": "int"
+        },
+        {
+          "name": "template",
+          "type": "string"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "MetaPoint": {
+      "tableName": "MetaPoint",
+      "contentHash": "eac730e07f25c24e7aeb50a3b48a4821cfd2adc432ab5e61f54586e89c9c701b",
+      "lastExportTime": "2026-10-03T13:51:35.486Z",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        },
+        {
+          "name": "icon",
+          "type": "string"
+        },
+        {
+          "name": "maxLevel",
+          "type": "int"
+        },
+        {
+          "name": "effectTarget",
+          "type": "string"
+        },
+        {
+          "name": "effectOp",
+          "type": "enum:EffectOp"
+        },
+        {
+          "name": "effectPerLevel",
+          "type": "float"
+        },
+        {
+          "name": "costBase",
+          "type": "float"
+        },
+        {
+          "name": "costPow",
+          "type": "float"
+        },
+        {
+          "name": "sortOrder",
+          "type": "int"
+        }
+      ]
+    },
+    "Player": {
+      "tableName": "Player",
+      "contentHash": "91cd13c9529c27141acb4a9f4419f3ddbeb7c6f316f961635e415f3a524da11f",
+      "lastExportTime": "2026-10-03T13:49:42.386Z",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "maxHp",
+          "type": "int"
+        },
+        {
+          "name": "visualRadius",
+          "type": "int"
+        },
+        {
+          "name": "hitRadius",
+          "type": "int"
+        },
+        {
+          "name": "moveSpeed",
+          "type": "int"
+        },
+        {
+          "name": "bulletCount",
+          "type": "int"
+        },
+        {
+          "name": "fireInterval",
+          "type": "float"
+        },
+        {
+          "name": "bulletSpeed",
+          "type": "int"
+        },
+        {
+          "name": "bulletDamage",
+          "type": "int"
+        },
+        {
+          "name": "bulletRadius",
+          "type": "int"
+        },
+        {
+          "name": "catchRadius",
+          "type": "int"
+        },
+        {
+          "name": "maxBulletLife",
+          "type": "float"
+        },
+        {
+          "name": "magnetRadius",
+          "type": "int"
+        },
+        {
+          "name": "freeBulletMax",
+          "type": "int"
+        },
+        {
+          "name": "sprite",
+          "type": "string"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "Skill": {
+      "tableName": "Skill",
+      "contentHash": "641efdae5135d51cd1deb4ec9a5ae2f44c0964d5b57b9ece13c7829939cdfc5b",
+      "lastExportTime": "2026-10-03T13:49:42.391Z",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "kind",
+          "type": "enum:SkillKind"
+        },
+        {
+          "name": "rarity",
+          "type": "enum:SkillRarity"
+        },
+        {
+          "name": "maxLevel",
+          "type": "int"
+        },
+        {
+          "name": "weight",
+          "type": "int"
+        },
+        {
+          "name": "icon",
+          "type": "string"
+        },
+        {
+          "name": "tags",
+          "type": "array:string"
+        },
+        {
+          "name": "evolveInto",
+          "type": "string"
+        },
+        {
+          "name": "evolveCost",
+          "type": "int"
+        },
+        {
+          "name": "fusePartners",
+          "type": "array:string"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "SkillEffect": {
+      "tableName": "SkillEffect",
+      "contentHash": "5928c9e912695bf2c723f5e27ba300a6fe35560cf77158b5d8362d0ea8bdb1ae",
+      "lastExportTime": "2026-10-03T13:49:42.392Z",
+      "fields": [
+        {
+          "name": "skillId",
+          "type": "string"
+        },
+        {
+          "name": "target",
+          "type": "string"
+        },
+        {
+          "name": "op",
+          "type": "enum:EffectOp"
+        },
+        {
+          "name": "perLevel",
+          "type": "float"
+        },
+        {
+          "name": "base",
+          "type": "float"
+        },
+        {
+          "name": "cap",
+          "type": "float"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "Skin": {
+      "tableName": "Skin",
+      "contentHash": "168fdb1de603f6a9322851c99e13ba75db60c00bae4a97d9e248e1d2870b43fa",
+      "lastExportTime": "2026-10-03T13:49:42.394Z",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "asset",
+          "type": "string"
+        },
+        {
+          "name": "unlock",
+          "type": "enum:SkinUnlock"
+        },
+        {
+          "name": "cost",
+          "type": "int"
+        },
+        {
+          "name": "bonusTarget",
+          "type": "string"
+        },
+        {
+          "name": "bonusOp",
+          "type": "enum:EffectOp"
+        },
+        {
+          "name": "bonusValue",
+          "type": "float"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    },
+    "Tuning": {
+      "tableName": "Tuning",
+      "contentHash": "167e28451a679d3b6f6c92e46044e8e585a682a704c01c64c86bf28493bdc781",
+      "lastExportTime": "2026-10-03T13:49:42.399Z",
+      "fields": [
+        {
+          "name": "key",
+          "type": "string"
+        },
+        {
+          "name": "value",
+          "type": "float"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        },
+        {
+          "name": "desc",
+          "type": "string"
+        }
+      ]
+    }
+  }
+}

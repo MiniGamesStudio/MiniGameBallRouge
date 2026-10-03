@@ -1,0 +1,24 @@
+// 自动生成的 FlatBuffers Schema 文件
+// 源工作表: Tuning
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Tuning 单条记录
+table Tuning {
+  /// 数值键（与 GameTuning 字段名一致）
+  key:string;
+  /// 数值（整数也填数字）
+  value:float32;
+  /// 分组
+  group:string;
+  /// 说明
+  desc:string;
+}
+
+/// Tuning 记录列表
+table TuningList {
+  items:[Tuning];
+}
+
+root_type TuningList;

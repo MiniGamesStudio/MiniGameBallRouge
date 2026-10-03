@@ -1,0 +1,40 @@
+// 自动生成的 FlatBuffers Schema 文件
+// 源工作表: Skill
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Skill 单条记录
+table Skill {
+  /// 技能 ID
+  id:string;
+  /// 名称
+  name:string;
+  /// 类别 0天赋 1主动 2被动（天赋也是技能）
+  kind:byte;
+  /// 稀有度 0普通 1稀有 2史诗 3传说
+  rarity:byte;
+  /// 等级上限（不允许无上限）
+  maxLevel:int32;
+  /// 抽取权重（0 = 不参与随机，只能由进化/融合得到）
+  weight:int32;
+  /// 图标资源名
+  icon:string;
+  /// 标签，如 ["chain","electric"]（融合判定用）
+  tags:[string];
+  /// 满级后进化成的技能 ID（可空）
+  evolveInto:string;
+  /// 进化消耗超级水晶数
+  evolveCost:int32;
+  /// 融合组合：["对方技能ID:产物技能ID:消耗水晶数"]
+  fusePartners:[string];
+  /// 描述文案
+  desc:string;
+}
+
+/// Skill 记录列表
+table SkillList {
+  items:[Skill];
+}
+
+root_type SkillList;

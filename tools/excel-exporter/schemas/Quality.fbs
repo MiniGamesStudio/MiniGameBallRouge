@@ -1,0 +1,32 @@
+// 自动生成的 FlatBuffers Schema 文件
+// 源工作表: Quality
+// 请勿手动修改此文件
+
+namespace Config;
+
+/// Quality 单条记录
+table Quality {
+  /// 品质 0白 1绿 2蓝 3紫 4金 5红
+  quality:byte;
+  /// 品质名
+  name:string;
+  /// 染色色值（零美术方案：同一贴图按品质染色）
+  colorHex:string;
+  /// 单格血量（约 ×1.65 几何递增）
+  hpPerCell:int32;
+  /// 生成权重（越大越常见）
+  weight:int32;
+  /// 单格基础经验
+  exp:int32;
+  /// 单格基础金币
+  coin:int32;
+  /// 备注
+  desc:string;
+}
+
+/// Quality 记录列表
+table QualityList {
+  items:[Quality];
+}
+
+root_type QualityList;
