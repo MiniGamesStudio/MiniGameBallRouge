@@ -4,3 +4,8 @@
 /temp/asset-db/log
 library
 temp
+
+# ── 工具链依赖与构建产物 ──
+# 注意：根目录的 node_modules 历史上已被提交（6288 个文件），下面这条只阻止“新”的依赖目录被加入。
+node_modules/
+tools/excel-exporter/dist/
