@@ -263,7 +263,7 @@ export class BattleView extends Component {
             GameTuning.cellSize
         );
         setPos(this.m_PlayerNode, this.m_PlayerX, this.m_PlayerY);
-        this.m_PlayerFeedback = HitFeedback.attach(this.m_PlayerNode, GameTuning.cellSize, GameTuning.cellSize, false);
+        this.m_PlayerFeedback = HitFeedback.attach(this.m_PlayerNode, getArt(this.m_Art, GameArtPath.player), GameTuning.cellSize, GameTuning.cellSize, false);
 
         // 瞄准游标开局在屏幕正中（开场默认朝正上方打，§4）
         this.m_CursorX = 0;
@@ -437,18 +437,15 @@ export class BattleView extends Component {
         const enemy = createEnemyRuntime(spec, this.m_Wave, this.m_NextId++);
         this.m_Enemies.push(enemy);
 
-        const node = createSprite(
-            this.m_FieldRoot,
-            `Enemy_${enemy.id}`,
-            getArt(this.m_Art, enemyArtPath(enemy.shape, enemy.quality))
-        );
+        const frame = getArt(this.m_Art, enemyArtPath(enemy.shape, enemy.quality));
+        const node = createSprite(this.m_FieldRoot, `Enemy_${enemy.id}`, frame);
         applyCellSize(node, enemy.cols, enemy.rows);
         setPos(node, enemy.x, enemy.y);
         setScale(node, enemyVisualScale(enemy));
         this.m_EnemyNodes.set(enemy.id, node);
         this.m_EnemyFeedback.set(
             enemy.id,
-            HitFeedback.attach(node, enemy.cols * GameTuning.cellSize, enemy.rows * GameTuning.cellSize, true)
+            HitFeedback.attach(node, frame, enemy.cols * GameTuning.cellSize, enemy.rows * GameTuning.cellSize, true)
         );
     }
 
