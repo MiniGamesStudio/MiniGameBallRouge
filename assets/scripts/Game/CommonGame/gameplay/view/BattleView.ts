@@ -57,6 +57,7 @@ import {
     GameArtPath,
     applyCellSize,
     applyContainFit,
+    applyNineSlice,
     createLabel,
     createSprite,
     enemyArtPaths,
@@ -373,6 +374,7 @@ export class BattleView extends Component {
         this.updateDrops(d);
         this.updateWaveFlow(d);
         this.updateHud(false);
+        this.keepCursorOnTop();
     }
 
     private isPaused(): boolean {
@@ -380,6 +382,15 @@ export class BattleView extends Component {
     }
 
     /** 自动开火：每 fireInterval 一发，弹匣空了就等回收（§6.1） */
+    /** 瞄准游标恒在最上层：敌人 / 子弹 / 掉落都是后生成的，兄弟序会把游标盖住 */
+    private keepCursorOnTop(): void {
+        if (!this.m_CursorNode || !this.m_CursorNode.isValid) return;
+        const parent = this.m_CursorNode.parent;
+        if (!parent) return;
+        const last = parent.children.length - 1;
+        if (this.m_CursorNode.getSiblingIndex() !== last) this.m_CursorNode.setSiblingIndex(last);
+    }
+
     private updateFiring(d: number): void {
         this.m_FireTimer += d;
         const magazineFree = this.m_Stats.bulletCount - this.m_MagazineOut;
@@ -480,6 +491,8 @@ export class BattleView extends Component {
         const tileFrame = getArt(this.m_Art, paths.base);
         const tile = createSprite(node, 'Base', tileFrame, boxW, boxH);
         setPos(tile, 0, 0);
+        // 九宫格：底图拉伸铺满占格时只拉伸中间，保住四角与描边（否则大怪底图会糊）
+        applyNineSlice(tile, tileFrame, GameTuning.baseSliceInset);
 
         // ② 怪物图：
         //    一格 / 两格 → **一格一张**（两格怪两格各一张，把占格铺满）

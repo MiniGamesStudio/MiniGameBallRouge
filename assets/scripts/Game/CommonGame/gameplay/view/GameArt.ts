@@ -359,6 +359,27 @@ export function applyContainFit(
 }
 
 /** 把节点朝向速度方向（子弹贴图默认朝上 → 角度 = atan2 转成度） */
+/**
+ * 九宫格（SLICED）：底图是整格美术（多层描边 + 圆角），拉大铺满整个占格时只拉伸中间区域，
+ * 四角与描边按 1:1 保留，不会糊成一团。inset 默认 16px（128 的 12.5%，实测描边环在内）。
+ */
+export function applyNineSlice(node: Node, frame: SpriteFrame | null, inset: number): void {
+    if (!frame) return;
+    const sprite = node.getComponent(Sprite);
+    if (!sprite) return;
+    const w = frame.originalSize.width;
+    const h = frame.originalSize.height;
+    const ix = Math.max(0, Math.min(Math.floor(inset), Math.floor(w * 0.5) - 1));
+    const iy = Math.max(0, Math.min(Math.floor(inset), Math.floor(h * 0.5) - 1));
+    if (ix <= 0 || iy <= 0) return;
+    frame.insetLeft = ix;
+    frame.insetRight = ix;
+    frame.insetTop = iy;
+    frame.insetBottom = iy;
+    frame.packable = false;
+    sprite.type = Sprite.Type.SLICED;
+}
+
 export function faceVelocity(node: Node, vx: number, vy: number): void {
     if (!node || !node.isValid) return;
     if (Math.abs(vx) < 1e-4 && Math.abs(vy) < 1e-4) return;
