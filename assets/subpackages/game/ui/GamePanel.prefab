@@ -230,7 +230,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "0b025332-a07a-4aa1-87da-7b3802e85833@f9941",
+      "__uuid__": "e2ba16ba-e693-4caf-b6ce-c46115a522cd@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
@@ -1889,15 +1889,6 @@
     },
     "m_PauseBtn": {
       "__id__": 23
-    },
-    "m_SkillOneBtn": {
-      "__id__": 33
-    },
-    "m_SkillTwoBtn": {
-      "__id__": 43
-    },
-    "m_SkillThreeBtn": {
-      "__id__": 53
     },
     "m_LevelText": {
       "__id__": 61
