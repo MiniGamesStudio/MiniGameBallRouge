@@ -149,6 +149,8 @@ export class BattleView extends Component {
     private m_HudRoot: Node = null;
     private m_PlayerNode: Node = null;
     private m_CursorNode: Node = null;
+    /** 瞄准浮标外围圆半径 = 玩家图显示半径 + cursorOrbitGap（开局创建玩家时算出） */
+    private m_OrbitRadius = 0;
 
     private m_PlayerX: number = 0;
     private m_PlayerY: number = 0;
@@ -283,6 +285,10 @@ export class BattleView extends Component {
             GameTuning.cellSize,
             GameTuning.artFitMargin
         );
+        // 外围圆半径 = 玩家图（那只球）显示半径 + 5
+        this.m_OrbitRadius =
+            (playerFit ? Math.max(playerFit.width, playerFit.height) : GameTuning.cellSize) / 2 +
+            GameTuning.cursorOrbitGap;
         setPos(this.m_PlayerNode, this.m_PlayerX, this.m_PlayerY);
         this.m_PlayerFeedback = HitFeedback.attach(
             this.m_PlayerNode,
@@ -296,13 +302,14 @@ export class BattleView extends Component {
         this.m_CursorX = 0;
         this.m_CursorY = 0;
         this.m_CursorNode = createSprite(
-            this.m_FieldRoot,
+            this.m_PlayerNode,
             'Cursor',
             getArt(this.m_Art, GameArtPath.cursor),
             GameTuning.cellSize * 0.5,
             GameTuning.cellSize * 0.7
         );
-        setPos(this.m_CursorNode, this.m_CursorX, this.m_CursorY);
+        const orbitLocal = this.cursorOrbitLocal();
+        setPos(this.m_CursorNode, orbitLocal.x, orbitLocal.y);
     }
 
     private createHud(): void {
@@ -379,23 +386,33 @@ export class BattleView extends Component {
         this.updateDrops(d);
         this.updateWaveFlow(d);
         this.updateHud(false);
-        this.keepCursorOnTop();
+        this.keepPlayerOnTop();
     }
 
     private isPaused(): boolean {
         return this.m_OverlayPaused || this.m_ExternalPaused;
     }
 
-    /** 自动开火：每 fireInterval 一发，弹匣空了就等回收（§6.1） */
-    /** 瞄准游标恒在最上层：敌人 / 子弹 / 掉落都是后生成的，兄弟序会把游标盖住 */
-    private keepCursorOnTop(): void {
-        if (!this.m_CursorNode || !this.m_CursorNode.isValid) return;
-        const parent = this.m_CursorNode.parent;
-        if (!parent) return;
-        const last = parent.children.length - 1;
-        if (this.m_CursorNode.getSiblingIndex() !== last) this.m_CursorNode.setSiblingIndex(last);
+    /** 浮标在玩家外围圆上的**局部**偏移：方向 = 玩家 → 瞄准点，半径固定 */
+    private cursorOrbitLocal(): { x: number; y: number } {
+        const dx = this.m_CursorX - this.m_PlayerX;
+        const dy = this.m_CursorY - this.m_PlayerY;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        const r = this.m_OrbitRadius > 0 ? this.m_OrbitRadius : GameTuning.cellSize;
+        if (len <= 1e-4) return { x: 0, y: r };
+        return { x: (dx / len) * r, y: (dy / len) * r };
     }
 
+    /** 玩家（含子节点瞄准浮标）恒在最上层：敌人 / 子弹 / 掉落都是后生成的，兄弟序会盖住玩家 */
+    private keepPlayerOnTop(): void {
+        if (!this.m_PlayerNode || !this.m_PlayerNode.isValid) return;
+        const parent = this.m_PlayerNode.parent;
+        if (!parent) return;
+        const last = parent.children.length - 1;
+        if (this.m_PlayerNode.getSiblingIndex() !== last) this.m_PlayerNode.setSiblingIndex(last);
+    }
+
+    /** 自动开火：每 fireInterval 一发，弹匣空了就等回收（§6.1） */
     private updateFiring(d: number): void {
         // 第一行怪出生并开始下移之前不许发射
         if (!this.m_FireUnlocked) {
@@ -895,12 +912,13 @@ export class BattleView extends Component {
         if (this.isPaused() || this.m_Finished) return;
         const local = this.toLocal(event);
         const touchId = event.getID();
-        const onCursor = distance(local.x, local.y, this.m_CursorX, this.m_CursorY) <= CURSOR_GRAB_RADIUS;
+        const orbit = this.cursorOrbitLocal();
+        const onCursor = distance(local.x, local.y, this.m_PlayerX + orbit.x, this.m_PlayerY + orbit.y) <= CURSOR_GRAB_RADIUS;
 
         // 落在游标上 → 拖游标；否则拖玩家（§4：点哪里都不会瞬移，用按下瞬间的偏移量）
         if (onCursor && this.m_CursorTouchId < 0) {
             this.m_CursorTouchId = touchId;
-            this.m_CursorGrabOffset = { x: this.m_CursorX - local.x, y: this.m_CursorY - local.y };
+            this.m_CursorGrabOffset = { x: this.m_PlayerX + orbit.x - local.x, y: this.m_PlayerY + orbit.y - local.y };
             return;
         }
         if (!onCursor && this.m_PlayerTouchId < 0) {
@@ -943,7 +961,8 @@ export class BattleView extends Component {
             );
             this.m_CursorX = next.x;
             this.m_CursorY = next.y;
-            setPos(this.m_CursorNode, this.m_CursorX, this.m_CursorY);
+            const orbitLocal = this.cursorOrbitLocal();
+        setPos(this.m_CursorNode, orbitLocal.x, orbitLocal.y);
         }
     }
 
