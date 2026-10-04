@@ -77,9 +77,10 @@ const { ccclass } = _decorator;
 
 /** 游标抓取半径（游标外接圆），按下点落在这个范围内就拖游标 */
 const CURSOR_GRAB_RADIUS = 45;
-/** 游标抓取容差：按在「以玩家为圆心、半径 R 的圆环」附近即可抓住 —— 径向 ±BAND px、与当前瞄准方向夹角 ≤ ANGLE */
-const CURSOR_GRAB_BAND = 70;
-const CURSOR_GRAB_ANGLE = Math.PI / 3;
+/** 游标抓取半径：按下点离「屏幕内可见的浮标」≤ 该值、且比离玩家更近 → 抓浮标；否则仍走「拖玩家」 */
+const CURSOR_GRAB_BAND = 90;
+/** 浮标贴屏幕边缘时保留的余量 px（≈半个浮标高度）：保证浮标整体不出屏、随时可抓 */
+const CURSOR_FLOAT_EDGE_MARGIN = 48;
 /** 波次之间的喘息时间 */
 const WAVE_INTERVAL = 1.2;
 /** 调试 HUD（显示本局生效数值，方便对着策划案核数值） */
@@ -399,18 +400,11 @@ export class BattleView extends Component {
     /** 按下点是否算「抓住瞄准浮标」：以玩家为圆心、半径 R 的圆环附近（径向 ±CURSOR_GRAB_BAND、夹角 ≤ CURSOR_GRAB_ANGLE）
      *  浮标停在圆环哪一段就能抓哪一段，拖过一次后随时还能再抓住；按在玩家身上或别处仍走「拖玩家」 */
     private isPressOnCursor(x: number, y: number): boolean {
-        const dx = x - this.m_PlayerX;
-        const dy = y - this.m_PlayerY;
-        const len = Math.sqrt(dx * dx + dy * dy);
-        if (len <= GameTuning.playerHitRadius) return false;
-        const r = this.m_OrbitRadius > 0 ? this.m_OrbitRadius : GameTuning.cellSize;
-        if (Math.abs(len - r) > CURSOR_GRAB_BAND) return false;
-        const adx = this.m_CursorX - this.m_PlayerX;
-        const ady = this.m_CursorY - this.m_PlayerY;
-        const alen = Math.sqrt(adx * adx + ady * ady);
-        if (alen <= 1e-4) return true;
-        const cos = (dx * adx + dy * ady) / (len * alen);
-        return Math.acos(Math.max(-1, Math.min(1, cos))) <= CURSOR_GRAB_ANGLE;
+        const orbit = this.cursorOrbitLocal();
+        const dc = distance(x, y, this.m_PlayerX + orbit.x, this.m_PlayerY + orbit.y);
+        if (dc > CURSOR_GRAB_BAND) return false;
+        const dp = distance(x, y, this.m_PlayerX, this.m_PlayerY);
+        return dc <= dp;
     }
 
     /** 浮标在玩家外围圆上的**局部**偏移：方向 = 玩家 → 瞄准点，半径固定 */
@@ -419,8 +413,18 @@ export class BattleView extends Component {
         const dy = this.m_CursorY - this.m_PlayerY;
         const len = Math.sqrt(dx * dx + dy * dy);
         const r = this.m_OrbitRadius > 0 ? this.m_OrbitRadius : GameTuning.cellSize;
-        if (len <= 1e-4) return { x: 0, y: r };
-        return { x: (dx / len) * r, y: (dy / len) * r };
+        let ox = 0;
+        let oy = r;
+        if (len > 1e-4) {
+            ox = (dx / len) * r;
+            oy = (dy / len) * r;
+        }
+        // 玩家贴近屏幕边缘时把浮标压回屏幕内：保证任何位置都看得见、抓得到（需求）
+        const bounds = screenBounds();
+        const m = CURSOR_FLOAT_EDGE_MARGIN;
+        const wx = Math.min(Math.max(this.m_PlayerX + ox, bounds.left + m), bounds.right - m);
+        const wy = Math.min(Math.max(this.m_PlayerY + oy, bounds.bottom + m), bounds.top - m);
+        return { x: wx - this.m_PlayerX, y: wy - this.m_PlayerY };
     }
 
     /** 玩家（含子节点瞄准浮标）恒在最上层：敌人 / 子弹 / 掉落都是后生成的，兄弟序会盖住玩家 */
