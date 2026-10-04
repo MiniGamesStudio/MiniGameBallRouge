@@ -140,6 +140,10 @@ export interface EnemyRuntime {
     /** 俯冲目标（锁定玩家当前位置） */
     diveTargetX: number;
     diveTargetY: number;
+    /** 被同列队首挡住（本帧不下落）：applyColumnBlocking 每帧计算 */
+    blocked?: boolean;
+    /** 被技能定住（预留：停止类技能置 true，同样阻塞同列后面的敌人） */
+    frozen?: boolean;
 }
 
 /** 掉落物运行时数据 */

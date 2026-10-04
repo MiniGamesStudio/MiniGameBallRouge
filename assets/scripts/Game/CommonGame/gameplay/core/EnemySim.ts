@@ -73,6 +73,8 @@ export function stepEnemy(enemy: EnemyRuntime, dt: number, world: EnemyWorld): E
         }
 
         case EnemyState.Falling: {
+            // 被同列队首挡住时原地不动（队首恢复移动或被消灭后自动继续下落）
+            if (enemy.blocked) break;
             enemy.y -= enemy.speed * dt;
             if (hasCrossedDiveLine(enemy)) {
                 // 越线后进入 1 s 判定等待：站住不动，此时仍可被击杀（§9.4）
@@ -136,6 +138,38 @@ export function stepEnemy(enemy: EnemyRuntime, dt: number, world: EnemyWorld): E
     }
 
     return result;
+}
+
+/**
+ * 同列队首阻塞（需求）：同一列里最下面那只不能前进时（到底站住 Telegraph、或被技能定住），
+ * 排在它后面的（更靠上的）敌人也停下；队首恢复移动或被消灭后自动放行。
+ * 每帧调用一次，纯函数，原地改写 enemy.blocked。
+ */
+export function applyColumnBlocking(enemies: EnemyRuntime[]): void {
+    for (const e of enemies) e.blocked = false;
+    // y 小的在下：从最下面那只往上扫
+    const sorted = enemies.filter(e => e.state !== EnemyState.Dead).sort((a, b) => a.y - b.y);
+    for (let i = 0; i < sorted.length; i++) {
+        if (!isColumnStopped(sorted[i])) continue;
+        for (let j = i + 1; j < sorted.length; j++) {
+            if (columnsOverlap(sorted[i], sorted[j])) sorted[j].blocked = true;
+        }
+    }
+}
+
+/** 队首"停住"的条件：到底站住（Telegraph）或被技能定住（frozen） */
+function isColumnStopped(enemy: EnemyRuntime): boolean {
+    return enemy.state === EnemyState.Telegraph || enemy.frozen === true;
+}
+
+/** 两只敌人的列区间是否重叠（列区间重叠即视为同一列） */
+function columnsOverlap(a: EnemyRuntime, b: EnemyRuntime): boolean {
+    const half = GameTuning.cellSize * 0.5;
+    const aL = a.x - a.cols * half;
+    const aR = a.x + a.cols * half;
+    const bL = b.x - b.cols * half;
+    const bR = b.x + b.cols * half;
+    return aL < bR && bL < aR;
 }
 
 /** 开始俯冲：锁定玩家当前位置 */

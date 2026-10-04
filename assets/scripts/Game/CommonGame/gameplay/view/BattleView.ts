@@ -31,7 +31,7 @@ import {
     screenBounds,
 } from '../core/BoardMath';
 import { BulletWorld, aimVelocity, createBullet, stepBullet } from '../core/BulletSim';
-import { EnemyWorld, enemyVisualScale, isDead, isHittable, killEnemy, stepEnemy } from '../core/EnemySim';
+import { EnemyWorld, applyColumnBlocking, enemyVisualScale, isDead, isHittable, killEnemy, stepEnemy } from '../core/EnemySim';
 import {
     catchRadiusWithBonus,
     enemyCoinValue,
@@ -235,7 +235,6 @@ export class BattleView extends Component {
         this.m_FieldRoot = makeNode(this.node, 'Field');
         this.m_HudRoot = makeNode(this.node, 'Hud');
 
-        this.createBackground();
         this.createPlayerAndCursor();
         this.createHud();
         this.createWorlds();
@@ -249,13 +248,6 @@ export class BattleView extends Component {
 
         this.startWave(1);
         this.showTalentChoice();
-    }
-
-    private createBackground(): void {
-        const frame = getArt(this.m_Art, GameArtPath.background);
-        if (!frame) return;
-        const bg = createSprite(this.m_FieldRoot, 'Background', frame, GameTuning.designWidth, GameTuning.designHeight);
-        bg.setSiblingIndex(0);
     }
 
     private createPlayerAndCursor(): void {
@@ -540,6 +532,8 @@ export class BattleView extends Component {
         this.m_EnemyWorld.playerY = this.m_PlayerY;
 
         const dead: number[] = [];
+        // 同列队首阻塞：队首（最下面那只）停住时，同列后面的敌人一起停下
+        applyColumnBlocking(this.m_Enemies);
         for (let i = 0; i < this.m_Enemies.length; i++) {
             const enemy = this.m_Enemies[i];
             stepEnemy(enemy, d, this.m_EnemyWorld);
