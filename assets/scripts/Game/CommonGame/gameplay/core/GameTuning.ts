@@ -34,7 +34,7 @@ export const GameTuning = {
      * 单格敌人的盒子 = [spawnLineY - cellSize, spawnLineY] = [667, 795]，
      * 正好整个在可视区上边界（+667）之外，下落后才进入画面。
      */
-    spawnLineY: 795,
+    spawnLineY: 667,
     /** 俯冲线 / 底线 y：敌人自身矩形底边越过它即进入判定 */
     diveLineY: -507,
     /** 玩家出生点距屏幕底部的高度 */

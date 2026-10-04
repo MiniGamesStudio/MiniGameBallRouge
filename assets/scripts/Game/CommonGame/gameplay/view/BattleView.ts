@@ -147,6 +147,8 @@ export class BattleView extends Component {
     private m_Bullets: BulletRuntime[] = [];
     private m_BulletNodes: Map<number, Node> = new Map();
     private m_Enemies: EnemyRuntime[] = [];
+    /** 开火解锁：第一行敌人出生并下移后才允许发射 */
+    private m_FireUnlocked = false;
     private m_EnemyNodes: Map<number, Node> = new Map();
     /** 敌人受击表现（闪白 + 震动） */
     /**
@@ -384,6 +386,11 @@ export class BattleView extends Component {
     }
 
     private updateFiring(d: number): void {
+        // 第一行怪出生并开始下移之前不许发射
+        if (!this.m_FireUnlocked) {
+            if (!this.m_Enemies.some(isHittable)) return;
+            this.m_FireUnlocked = true;
+        }
         this.m_FireTimer += d;
         const magazineFree = this.m_Stats.bulletCount - this.m_MagazineOut;
         if (this.m_FireTimer < this.m_Stats.fireInterval || magazineFree <= 0) return;
