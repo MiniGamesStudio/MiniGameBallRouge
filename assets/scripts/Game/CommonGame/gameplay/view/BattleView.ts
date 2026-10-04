@@ -31,7 +31,7 @@ import {
     screenBounds,
 } from '../core/BoardMath';
 import { BulletWorld, aimVelocity, createBullet, stepBullet } from '../core/BulletSim';
-import { EnemyWorld, applyColumnBlocking, enemyVisualScale, isDead, isHittable, killEnemy, stepEnemy } from '../core/EnemySim';
+import { EnemyWorld, applyStopBlocking, enemyVisualScale, isDead, isHittable, killEnemy, stepEnemy } from '../core/EnemySim';
 import {
     catchRadiusWithBonus,
     enemyCoinValue,
@@ -539,8 +539,8 @@ export class BattleView extends Component {
         this.m_EnemyWorld.playerY = this.m_PlayerY;
 
         const dead: number[] = [];
-        // 同列队首阻塞：队首（最下面那只）停住时，同列后面的敌人一起停下
-        applyColumnBlocking(this.m_Enemies);
+        // 全场停止：只要有敌人停住不动（到底 / 被技能定住），所有敌人一律停止下落
+        applyStopBlocking(this.m_Enemies);
         for (let i = 0; i < this.m_Enemies.length; i++) {
             const enemy = this.m_Enemies[i];
             stepEnemy(enemy, d, this.m_EnemyWorld);
