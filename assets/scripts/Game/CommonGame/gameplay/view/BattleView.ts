@@ -77,6 +77,9 @@ const { ccclass } = _decorator;
 
 /** 游标抓取半径（游标外接圆），按下点落在这个范围内就拖游标 */
 const CURSOR_GRAB_RADIUS = 45;
+/** 游标抓取容差：按在「以玩家为圆心、半径 R 的圆环」附近即可抓住 —— 径向 ±BAND px、与当前瞄准方向夹角 ≤ ANGLE */
+const CURSOR_GRAB_BAND = 70;
+const CURSOR_GRAB_ANGLE = Math.PI / 3;
 /** 波次之间的喘息时间 */
 const WAVE_INTERVAL = 1.2;
 /** 调试 HUD（显示本局生效数值，方便对着策划案核数值） */
@@ -391,6 +394,23 @@ export class BattleView extends Component {
 
     private isPaused(): boolean {
         return this.m_OverlayPaused || this.m_ExternalPaused;
+    }
+
+    /** 按下点是否算「抓住瞄准浮标」：以玩家为圆心、半径 R 的圆环附近（径向 ±CURSOR_GRAB_BAND、夹角 ≤ CURSOR_GRAB_ANGLE）
+     *  浮标停在圆环哪一段就能抓哪一段，拖过一次后随时还能再抓住；按在玩家身上或别处仍走「拖玩家」 */
+    private isPressOnCursor(x: number, y: number): boolean {
+        const dx = x - this.m_PlayerX;
+        const dy = y - this.m_PlayerY;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len <= GameTuning.playerHitRadius) return false;
+        const r = this.m_OrbitRadius > 0 ? this.m_OrbitRadius : GameTuning.cellSize;
+        if (Math.abs(len - r) > CURSOR_GRAB_BAND) return false;
+        const adx = this.m_CursorX - this.m_PlayerX;
+        const ady = this.m_CursorY - this.m_PlayerY;
+        const alen = Math.sqrt(adx * adx + ady * ady);
+        if (alen <= 1e-4) return true;
+        const cos = (dx * adx + dy * ady) / (len * alen);
+        return Math.acos(Math.max(-1, Math.min(1, cos))) <= CURSOR_GRAB_ANGLE;
     }
 
     /** 浮标在玩家外围圆上的**局部**偏移：方向 = 玩家 → 瞄准点，半径固定 */
@@ -913,7 +933,7 @@ export class BattleView extends Component {
         const local = this.toLocal(event);
         const touchId = event.getID();
         const orbit = this.cursorOrbitLocal();
-        const onCursor = distance(local.x, local.y, this.m_PlayerX + orbit.x, this.m_PlayerY + orbit.y) <= CURSOR_GRAB_RADIUS;
+        const onCursor = this.isPressOnCursor(local.x, local.y);
 
         // 落在游标上 → 拖游标；否则拖玩家（§4：点哪里都不会瞬移，用按下瞬间的偏移量）
         if (onCursor && this.m_CursorTouchId < 0) {

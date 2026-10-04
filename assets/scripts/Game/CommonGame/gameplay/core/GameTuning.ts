@@ -164,7 +164,7 @@ export const GameTuning = {
      */
     artFitMargin: 0.92,
     /** 瞄准浮标外围圆半径 = 玩家图显示半径 + 该值 px */
-    cursorOrbitGap: 5,
+    cursorOrbitGap: 50,
     /** 敌人品质底图九宫格切边 px：底图 128×128 的多层描边 + 圆角都在这 16px 之内 */
     baseSliceInset: 16,
     /** 掉落物缩放：尺寸 = cellSize × 基准 × (1 + (value-1) × perValue)，封顶 max */
