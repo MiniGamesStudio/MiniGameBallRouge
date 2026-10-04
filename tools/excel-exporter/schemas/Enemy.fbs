@@ -16,7 +16,7 @@ table Enemy {
   type:byte;
   /// 体型 0单格 1双格横 2双格竖 3四格 4六格 5八格
   shape:byte;
-  /// 贴图名（零美术方案：按品质染色）
+  /// 怪物贴图名（monster_0001-0010 普通/精英；Boss_001-003 四/六/八格）
   asset:string;
   /// 额外血量倍率（默认 1，血量主要走品质表）
   hpMul:float32;

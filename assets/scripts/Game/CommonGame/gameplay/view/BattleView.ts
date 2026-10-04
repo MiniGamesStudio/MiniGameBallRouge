@@ -56,9 +56,10 @@ import {
     ArtCache,
     GameArtPath,
     applyCellSize,
+    applyContainFit,
     createLabel,
     createSprite,
-    enemyArtPath,
+    enemyArtPaths,
     faceVelocity,
     getArt,
     makeNode,
@@ -255,20 +256,41 @@ export class BattleView extends Component {
         const bounds = screenBounds();
         this.m_PlayerX = 0;
         this.m_PlayerY = bounds.bottom + GameTuning.playerSpawnBottomOffset;
+        const playerFrame = getArt(this.m_Art, GameArtPath.player);
         this.m_PlayerNode = createSprite(
             this.m_FieldRoot,
             'Player',
-            getArt(this.m_Art, GameArtPath.player),
+            playerFrame,
             GameTuning.cellSize,
             GameTuning.cellSize
         );
+        // 玩家图原始 80×76：contain 适配到一格内，视觉上与一格敌人同量级
+        const playerFit = applyContainFit(
+            this.m_PlayerNode,
+            playerFrame,
+            GameTuning.cellSize,
+            GameTuning.cellSize,
+            GameTuning.artFitMargin
+        );
         setPos(this.m_PlayerNode, this.m_PlayerX, this.m_PlayerY);
-        this.m_PlayerFeedback = HitFeedback.attach(this.m_PlayerNode, getArt(this.m_Art, GameArtPath.player), GameTuning.cellSize, GameTuning.cellSize, false);
+        this.m_PlayerFeedback = HitFeedback.attach(
+            this.m_PlayerNode,
+            playerFrame,
+            playerFit ? playerFit.width : GameTuning.cellSize,
+            playerFit ? playerFit.height : GameTuning.cellSize,
+            false
+        );
 
         // 瞄准游标开局在屏幕正中（开场默认朝正上方打，§4）
         this.m_CursorX = 0;
         this.m_CursorY = 0;
-        this.m_CursorNode = createSprite(this.m_FieldRoot, 'Cursor', getArt(this.m_Art, GameArtPath.cursor));
+        this.m_CursorNode = createSprite(
+            this.m_FieldRoot,
+            'Cursor',
+            getArt(this.m_Art, GameArtPath.cursor),
+            GameTuning.cellSize * 0.5,
+            GameTuning.cellSize * 0.7
+        );
         setPos(this.m_CursorNode, this.m_CursorX, this.m_CursorY);
     }
 
@@ -371,7 +393,9 @@ export class BattleView extends Component {
         const node = createSprite(
             this.m_FieldRoot,
             `Bullet_${bullet.id}`,
-            getArt(this.m_Art, GameArtPath.bullet)
+            getArt(this.m_Art, GameArtPath.bullet),
+            GameTuning.cellSize * 0.25,
+            GameTuning.cellSize * 0.375
         );
         faceVelocity(node, bullet.vx, bullet.vy);
         setPos(node, bullet.x, bullet.y);
@@ -437,15 +461,43 @@ export class BattleView extends Component {
         const enemy = createEnemyRuntime(spec, this.m_Wave, this.m_NextId++);
         this.m_Enemies.push(enemy);
 
-        const frame = getArt(this.m_Art, enemyArtPath(enemy.shape, enemy.quality));
-        const node = createSprite(this.m_FieldRoot, `Enemy_${enemy.id}`, frame);
+        const cell = GameTuning.cellSize;
+        const boxW = enemy.cols * cell;
+        const boxH = enemy.rows * cell;
+
+        // 敌人根节点只负责定位 / 缩放 / 受击表现，自身不画东西
+        const node = makeNode(this.m_FieldRoot, `Enemy_${enemy.id}`);
+        if (!node.getComponent(UITransform)) node.addComponent(UITransform);
         applyCellSize(node, enemy.cols, enemy.rows);
+
+        // ① 品质底图：按格平铺（一格一张，2 格怪就是两张并排），不拉伸以保住整格美术的质感
+        const paths = enemyArtPaths(enemy.defId, enemy.shape, enemy.quality);
+        const tileFrame = getArt(this.m_Art, paths.base);
+        for (let r = 0; r < enemy.rows; r++) {
+            for (let c = 0; c < enemy.cols; c++) {
+                const tile = createSprite(node, `Tile_${r}_${c}`, tileFrame, cell, cell);
+                setPos(tile, (c - (enemy.cols - 1) * 0.5) * cell, ((enemy.rows - 1) * 0.5 - r) * cell);
+            }
+        }
+
+        // ② 怪物图：contain 适配叠在占格中间（四/六/八格走 Boss_00x）
+        const monsterFrame = getArt(this.m_Art, paths.monster);
+        const monster = createSprite(node, 'Monster', monsterFrame);
+        const fit = applyContainFit(monster, monsterFrame, boxW, boxH, GameTuning.artFitMargin);
+
         setPos(node, enemy.x, enemy.y);
         setScale(node, enemyVisualScale(enemy));
         this.m_EnemyNodes.set(enemy.id, node);
+        // 闪白只闪怪物轮廓（底图不闪）：模板尺寸要用适配后的实际尺寸，用占格尺寸会与轮廓错位
         this.m_EnemyFeedback.set(
             enemy.id,
-            HitFeedback.attach(node, frame, enemy.cols * GameTuning.cellSize, enemy.rows * GameTuning.cellSize, true)
+            HitFeedback.attach(
+                node,
+                monsterFrame,
+                fit ? fit.width : boxW,
+                fit ? fit.height : boxH,
+                true
+            )
         );
     }
 

@@ -4,7 +4,7 @@
     "Drop": {
       "tableName": "Drop",
       "contentHash": "19e87b98c8dbff21836149b3367554ff4cdcbb4e6de16b3e4a39969d88fe4641",
-      "lastExportTime": "2026-10-03T15:44:42.303Z",
+      "lastExportTime": "2026-10-04T09:30:16.264Z",
       "fields": [
         {
           "name": "id",
@@ -58,8 +58,8 @@
     },
     "Quality": {
       "tableName": "Quality",
-      "contentHash": "1c67eff84d3064258b86537cc340db1f81cf83a5e92ca11adee9dc808245f592",
-      "lastExportTime": "2026-10-03T15:44:42.309Z",
+      "contentHash": "4704e76b115a9945013ff3b14301a4161cbd7b079c92eb2da392b9903ee87246",
+      "lastExportTime": "2026-10-04T09:30:16.271Z",
       "fields": [
         {
           "name": "quality",
@@ -71,6 +71,10 @@
         },
         {
           "name": "colorHex",
+          "type": "string"
+        },
+        {
+          "name": "baseArt",
           "type": "string"
         },
         {
@@ -97,8 +101,8 @@
     },
     "Enemy": {
       "tableName": "Enemy",
-      "contentHash": "22bf3cf052c8ab21f62444e12194c8cbadb08efc4f17f8e3add8550156b60848",
-      "lastExportTime": "2026-10-03T15:44:42.310Z",
+      "contentHash": "5c189770b12ab3dfe4bed25e95e3f60cfee0414817a8a27d1e320094bf02f978",
+      "lastExportTime": "2026-10-04T09:30:16.272Z",
       "fields": [
         {
           "name": "id",
@@ -193,7 +197,7 @@
     "BossPhase": {
       "tableName": "BossPhase",
       "contentHash": "4f4f6912d0e5d5a99a281cdb7ca5cb773e1fe8c5a8f7ade36b1d68d46c48473b",
-      "lastExportTime": "2026-10-03T15:44:42.311Z",
+      "lastExportTime": "2026-10-04T09:30:16.273Z",
       "fields": [
         {
           "name": "enemyId",
@@ -236,7 +240,7 @@
     "Level": {
       "tableName": "Level",
       "contentHash": "7aea2274780caa55d409c6c571272aa3424afab26319f91521ae30dbbf5cf1e8",
-      "lastExportTime": "2026-10-03T15:44:42.315Z",
+      "lastExportTime": "2026-10-04T09:30:16.278Z",
       "fields": [
         {
           "name": "id",
@@ -271,7 +275,7 @@
     "Wave": {
       "tableName": "Wave",
       "contentHash": "22aa189a94b2f7fd8a9f1564245b3150a8160d84cf77eb48ce1954ced1c21d7e",
-      "lastExportTime": "2026-10-03T15:44:42.317Z",
+      "lastExportTime": "2026-10-04T09:30:16.279Z",
       "fields": [
         {
           "name": "id",
@@ -330,7 +334,7 @@
     "Row": {
       "tableName": "Row",
       "contentHash": "d8f4f8a1dbd398efd9dd407b60d813ce696d02cdc902a3eb05bd1332bde158c9",
-      "lastExportTime": "2026-10-03T15:44:42.317Z",
+      "lastExportTime": "2026-10-04T09:30:16.280Z",
       "fields": [
         {
           "name": "id",
@@ -361,7 +365,7 @@
     "MetaPoint": {
       "tableName": "MetaPoint",
       "contentHash": "eac730e07f25c24e7aeb50a3b48a4821cfd2adc432ab5e61f54586e89c9c701b",
-      "lastExportTime": "2026-10-03T15:44:42.320Z",
+      "lastExportTime": "2026-10-04T09:30:16.282Z",
       "fields": [
         {
           "name": "id",
@@ -411,8 +415,8 @@
     },
     "Player": {
       "tableName": "Player",
-      "contentHash": "91cd13c9529c27141acb4a9f4419f3ddbeb7c6f316f961635e415f3a524da11f",
-      "lastExportTime": "2026-10-03T15:44:42.324Z",
+      "contentHash": "ae5c70ed3dc9c5fda42665cac333007618db9afb13644a4a56392346a9384e54",
+      "lastExportTime": "2026-10-04T09:30:16.285Z",
       "fields": [
         {
           "name": "id",
@@ -487,7 +491,7 @@
     "Skill": {
       "tableName": "Skill",
       "contentHash": "641efdae5135d51cd1deb4ec9a5ae2f44c0964d5b57b9ece13c7829939cdfc5b",
-      "lastExportTime": "2026-10-03T15:44:42.329Z",
+      "lastExportTime": "2026-10-04T09:30:16.290Z",
       "fields": [
         {
           "name": "id",
@@ -542,7 +546,7 @@
     "SkillEffect": {
       "tableName": "SkillEffect",
       "contentHash": "5928c9e912695bf2c723f5e27ba300a6fe35560cf77158b5d8362d0ea8bdb1ae",
-      "lastExportTime": "2026-10-03T15:44:42.330Z",
+      "lastExportTime": "2026-10-04T09:30:16.291Z",
       "fields": [
         {
           "name": "skillId",
@@ -577,7 +581,7 @@
     "Skin": {
       "tableName": "Skin",
       "contentHash": "168fdb1de603f6a9322851c99e13ba75db60c00bae4a97d9e248e1d2870b43fa",
-      "lastExportTime": "2026-10-03T15:44:42.335Z",
+      "lastExportTime": "2026-10-04T09:30:16.295Z",
       "fields": [
         {
           "name": "id",
@@ -620,7 +624,7 @@
     "Tuning": {
       "tableName": "Tuning",
       "contentHash": "167e28451a679d3b6f6c92e46044e8e585a682a704c01c64c86bf28493bdc781",
-      "lastExportTime": "2026-10-03T15:44:42.338Z",
+      "lastExportTime": "2026-10-04T09:30:16.298Z",
       "fields": [
         {
           "name": "key",

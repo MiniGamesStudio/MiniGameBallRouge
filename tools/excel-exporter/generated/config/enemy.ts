@@ -70,7 +70,7 @@ shape():number {
 }
 
 /**
- * 贴图名（零美术方案：按品质染色）
+ * 怪物贴图名（monster_0001-0010 普通/精英；Boss_001-003 四/六/八格）
  */
 asset():string|null
 asset(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null

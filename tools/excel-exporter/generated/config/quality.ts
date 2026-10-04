@@ -44,7 +44,7 @@ name(optionalEncoding?:any):string|Uint8Array|null {
 }
 
 /**
- * 染色色值（零美术方案：同一贴图按品质染色）
+ * 染色色值（UI / 掉落物染色仍可用）
  */
 colorHex():string|null
 colorHex(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
@@ -54,10 +54,20 @@ colorHex(optionalEncoding?:any):string|Uint8Array|null {
 }
 
 /**
+ * 品质底图贴图名（一格一张，128×128）
+ */
+baseArt():string|null
+baseArt(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
+baseArt(optionalEncoding?:any):string|Uint8Array|null {
+  const offset = this.bb!.__offset(this.bb_pos, 10);
+  return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
+}
+
+/**
  * 单格血量（约 ×1.65 几何递增）
  */
 hpPerCell():number {
-  const offset = this.bb!.__offset(this.bb_pos, 10);
+  const offset = this.bb!.__offset(this.bb_pos, 12);
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
@@ -65,7 +75,7 @@ hpPerCell():number {
  * 生成权重（越大越常见）
  */
 weight():number {
-  const offset = this.bb!.__offset(this.bb_pos, 12);
+  const offset = this.bb!.__offset(this.bb_pos, 14);
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
@@ -73,7 +83,7 @@ weight():number {
  * 单格基础经验
  */
 exp():number {
-  const offset = this.bb!.__offset(this.bb_pos, 14);
+  const offset = this.bb!.__offset(this.bb_pos, 16);
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
@@ -81,7 +91,7 @@ exp():number {
  * 单格基础金币
  */
 coin():number {
-  const offset = this.bb!.__offset(this.bb_pos, 16);
+  const offset = this.bb!.__offset(this.bb_pos, 18);
   return offset ? this.bb!.readInt32(this.bb_pos + offset) : 0;
 }
 
@@ -91,12 +101,12 @@ coin():number {
 desc():string|null
 desc(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null
 desc(optionalEncoding?:any):string|Uint8Array|null {
-  const offset = this.bb!.__offset(this.bb_pos, 18);
+  const offset = this.bb!.__offset(this.bb_pos, 20);
   return offset ? this.bb!.__string(this.bb_pos + offset, optionalEncoding) : null;
 }
 
 static startQuality(builder:flatbuffers.Builder) {
-  builder.startObject(8);
+  builder.startObject(9);
 }
 
 static addQuality(builder:flatbuffers.Builder, quality:number) {
@@ -111,24 +121,28 @@ static addColorHex(builder:flatbuffers.Builder, colorHexOffset:flatbuffers.Offse
   builder.addFieldOffset(2, colorHexOffset, 0);
 }
 
+static addBaseArt(builder:flatbuffers.Builder, baseArtOffset:flatbuffers.Offset) {
+  builder.addFieldOffset(3, baseArtOffset, 0);
+}
+
 static addHpPerCell(builder:flatbuffers.Builder, hpPerCell:number) {
-  builder.addFieldInt32(3, hpPerCell, 0);
+  builder.addFieldInt32(4, hpPerCell, 0);
 }
 
 static addWeight(builder:flatbuffers.Builder, weight:number) {
-  builder.addFieldInt32(4, weight, 0);
+  builder.addFieldInt32(5, weight, 0);
 }
 
 static addExp(builder:flatbuffers.Builder, exp:number) {
-  builder.addFieldInt32(5, exp, 0);
+  builder.addFieldInt32(6, exp, 0);
 }
 
 static addCoin(builder:flatbuffers.Builder, coin:number) {
-  builder.addFieldInt32(6, coin, 0);
+  builder.addFieldInt32(7, coin, 0);
 }
 
 static addDesc(builder:flatbuffers.Builder, descOffset:flatbuffers.Offset) {
-  builder.addFieldOffset(7, descOffset, 0);
+  builder.addFieldOffset(8, descOffset, 0);
 }
 
 static endQuality(builder:flatbuffers.Builder):flatbuffers.Offset {
@@ -136,11 +150,12 @@ static endQuality(builder:flatbuffers.Builder):flatbuffers.Offset {
   return offset;
 }
 
-static createQuality(builder:flatbuffers.Builder, quality:number, nameOffset:flatbuffers.Offset, colorHexOffset:flatbuffers.Offset, hpPerCell:number, weight:number, exp:number, coin:number, descOffset:flatbuffers.Offset):flatbuffers.Offset {
+static createQuality(builder:flatbuffers.Builder, quality:number, nameOffset:flatbuffers.Offset, colorHexOffset:flatbuffers.Offset, baseArtOffset:flatbuffers.Offset, hpPerCell:number, weight:number, exp:number, coin:number, descOffset:flatbuffers.Offset):flatbuffers.Offset {
   Quality.startQuality(builder);
   Quality.addQuality(builder, quality);
   Quality.addName(builder, nameOffset);
   Quality.addColorHex(builder, colorHexOffset);
+  Quality.addBaseArt(builder, baseArtOffset);
   Quality.addHpPerCell(builder, hpPerCell);
   Quality.addWeight(builder, weight);
   Quality.addExp(builder, exp);

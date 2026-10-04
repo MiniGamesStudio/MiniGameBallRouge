@@ -10,8 +10,10 @@ table Quality {
   quality:byte;
   /// 品质名
   name:string;
-  /// 染色色值（零美术方案：同一贴图按品质染色）
+  /// 染色色值（UI / 掉落物染色仍可用）
   colorHex:string;
+  /// 品质底图贴图名（一格一张，128×128）
+  baseArt:string;
   /// 单格血量（约 ×1.65 几何递增）
   hpPerCell:int32;
   /// 生成权重（越大越常见）

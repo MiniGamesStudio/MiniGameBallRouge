@@ -62,7 +62,7 @@ visualRadius():number {
 }
 
 /**
- * 受击判定半径 px（建议 24~28，越小越耐玩）
+ * 受击判定半径 px（建议 45，越小越耐玩）
  */
 hitRadius():number {
   const offset = this.bb!.__offset(this.bb_pos, 12);
@@ -150,7 +150,7 @@ freeBulletMax():number {
 }
 
 /**
- * 贴图名
+ * 玩家贴图名（player_001）
  */
 sprite():string|null
 sprite(optionalEncoding:flatbuffers.Encoding):string|Uint8Array|null

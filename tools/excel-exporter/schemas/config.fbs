@@ -43,8 +43,10 @@ table Quality {
   quality:byte;
   /// 品质名
   name:string;
-  /// 染色色值（零美术方案：同一贴图按品质染色）
+  /// 染色色值（UI / 掉落物染色仍可用）
   colorHex:string;
+  /// 品质底图贴图名（一格一张，128×128）
+  baseArt:string;
   /// 单格血量（约 ×1.65 几何递增）
   hpPerCell:int32;
   /// 生成权重（越大越常见）
@@ -74,7 +76,7 @@ table Enemy {
   type:byte;
   /// 体型 0单格 1双格横 2双格竖 3四格 4六格 5八格
   shape:byte;
-  /// 贴图名（零美术方案：按品质染色）
+  /// 怪物贴图名（monster_0001-0010 普通/精英；Boss_001-003 四/六/八格）
   asset:string;
   /// 额外血量倍率（默认 1，血量主要走品质表）
   hpMul:float32;
@@ -262,7 +264,7 @@ table Player {
   maxHp:int32;
   /// 视觉半径 px（贴图内切圆）
   visualRadius:int32;
-  /// 受击判定半径 px（建议 24~28，越小越耐玩）
+  /// 受击判定半径 px（建议 45，越小越耐玩）
   hitRadius:int32;
   /// 移动速度 px/s
   moveSpeed:int32;
@@ -284,7 +286,7 @@ table Player {
   magnetRadius:int32;
   /// 免费弹上限（僚机/分裂弹，不占弹匣）
   freeBulletMax:int32;
-  /// 贴图名
+  /// 玩家贴图名（player_001）
   sprite:string;
   /// 备注
   desc:string;

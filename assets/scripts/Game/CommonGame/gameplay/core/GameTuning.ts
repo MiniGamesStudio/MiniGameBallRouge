@@ -16,8 +16,12 @@ export const GameTuning = {
     designWidth: 750,
     /** 设计分辨率高 */
     designHeight: 1334,
-    /** 格边长（px）：素材原始尺寸，精灵默认不缩放 */
-    cellSize: 80,
+    /**
+     * 格边长（px）。128×128 与品质底图素材（white/green/blue/purple/yellow/red）一比一。
+     * ⚠️ 从 80 改成 128 时，所有「px 绝对值」类数值按 1.6 等比缩放以保持手感，
+     * 以「格」或「秒」为单位的数值不动（rowGapCells / spawnStagger 等）。
+     */
+    cellSize: 128,
     /** 棋盘列数 */
     columns: 5,
     /** 棋盘底边 y */
@@ -27,20 +31,20 @@ export const GameTuning = {
     /** 敌人出生线 y（屏幕上方一格） */
     /**
      * 出生线。注意它是出生带的**顶边**，不是敌人中心：
-     * 单格敌人的盒子 = [spawnLineY - cellSize, spawnLineY] = [707, 787]，
+     * 单格敌人的盒子 = [spawnLineY - cellSize, spawnLineY] = [667, 795]，
      * 正好整个在可视区上边界（+667）之外，下落后才进入画面。
      */
-    spawnLineY: 787,
+    spawnLineY: 795,
     /** 俯冲线 / 底线 y：敌人自身矩形底边越过它即进入判定 */
-    diveLineY: -567,
+    diveLineY: -507,
     /** 玩家出生点距屏幕底部的高度 */
-    playerSpawnBottomOffset: 120,
+    playerSpawnBottomOffset: 192,
 
     // ─────────── 玩家（§8.6 / 附录 A.1） ───────────
     /** 玩家血量（占位默认值，正式值走 Player 表） */
     playerMaxHp: 100,
-    /** 玩家受击判定半径：故意小于视觉半径（80/2=40），手感更好 */
-    playerHitRadius: 28,
+    /** 玩家受击判定半径：故意小于视觉半径（128/2=64），手感更好 */
+    playerHitRadius: 45,
 
     // ─────────── 子弹（§6.6） ───────────
     /** 弹匣容量 */
@@ -48,13 +52,13 @@ export const GameTuning = {
     /** 开火间隔（s） */
     fireInterval: 0.35,
     /** 子弹速度 px/s */
-    bulletSpeed: 900,
+    bulletSpeed: 1440,
     /** 子弹伤害 */
     bulletDamage: 10,
     /** 子弹半径 px */
-    bulletRadius: 10,
+    bulletRadius: 16,
     /** 回收半径 = 判定半径 + 子弹半径 */
-    catchRadius: 38,
+    catchRadius: 61,
     /** 最长存活（s）：超时强制回身，兜底防死锁 */
     maxBulletLife: 8,
     /** 回身速度倍率 */
@@ -62,7 +66,7 @@ export const GameTuning = {
     /** 免费弹（僚机 / 分裂弹）全局上限 */
     freeBulletMax: 8,
     /** 单帧子步最大位移（防穿模） */
-    maxSubStepDistance: 8,
+    maxSubStepDistance: 13,
     /** 单帧子步上限 */
     maxSubStepCount: 16,
 
@@ -106,7 +110,7 @@ export const GameTuning = {
     /** 出生缩放动画：时长（s） */
     spawnScaleTime: 0.25,
     /** 第 1 波下落速度 px/s */
-    baseFallSpeed: 25,
+    baseFallSpeed: 40,
     /** 每波下落速度成长 */
     fallSpeedGrowth: 0.08,
     /** 下落速度成长上限倍率 */
@@ -120,13 +124,13 @@ export const GameTuning = {
     /** 越线后的判定等待时间（s），此期间可被击杀 */
     diveTelegraph: 1.0,
     /** 俯冲速度 px/s */
-    diveSpeed: 700,
+    diveSpeed: 1120,
     /** 每格俯冲伤害 */
     diveDamagePerCell: 5,
     /** 单次俯冲伤害上限 */
     diveDamageMax: 40,
     /** 俯冲命中玩家的判定半径 */
-    diveHitRadius: 45,
+    diveHitRadius: 72,
     /** 俯冲前放大到的倍数 */
     diveScaleUp: 1.35,
     /** 放大时长（s） */
@@ -135,14 +139,14 @@ export const GameTuning = {
     diveScaleDown: 0.5,
 
     // ─────────── 掉落与成长（§11） ───────────
-    /** 掉落物散落半径（0.2 格 = 16 px） */
-    dropScatterRadius: 16,
-    /** 磁吸半径（1.5 格 = 120 px），可被技能/加点提升 */
-    magnetRadius: 120,
+    /** 掉落物散落半径（0.2 格 = 25.6 px） */
+    dropScatterRadius: 26,
+    /** 磁吸半径（1.5 格 = 192 px），可被技能/加点提升 */
+    magnetRadius: 192,
     /** 拾取半径 */
-    pickupRadius: 24,
+    pickupRadius: 38,
     /** 磁吸飞行速度 px/s */
-    magnetSpeed: 700,
+    magnetSpeed: 1120,
     /** 掉落物存活时间（s），超时消失 */
     dropLifeTime: 15,
     /** 升级所需经验：need(n) = 8 + 6(n-1) + 1.5(n-1)^2 */
@@ -152,6 +156,14 @@ export const GameTuning = {
     /** 升级 / 开局天赋的候选数量 */
     choiceCount: 3,
 
+    // ─────────── 美术适配 ───────────
+    /**
+     * 怪物 / 玩家图在占格内的占比（contain 适配的留白系数）。
+     * 美术原始宽度是 80，而占格是 128 的整数倍：直接按占格缩放会拉变形，
+     * 所以按美术自身长宽比算一个统一缩放，再乘这个系数留一点边。
+     */
+    artFitMargin: 0.92,
+
     // ─────────── 打击反馈（受击闪白 / 敌人震动） ───────────
     /** 受击闪白持续时间（s） */
     hitFlashTime: 0.12,
@@ -160,7 +172,7 @@ export const GameTuning = {
     /** 敌人受击震动持续时间（s） */
     hitShakeTime: 0.16,
     /** 敌人受击震动幅度（px，左右上下随机抖动，随时间衰减） */
-    hitShakeAmplitude: 3,
+    hitShakeAmplitude: 5,
 };
 
 /** 数值键名类型，便于后续用配置表覆盖 */

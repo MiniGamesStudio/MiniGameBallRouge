@@ -14,7 +14,7 @@ table Player {
   maxHp:int32;
   /// 视觉半径 px（贴图内切圆）
   visualRadius:int32;
-  /// 受击判定半径 px（建议 24~28，越小越耐玩）
+  /// 受击判定半径 px（建议 45，越小越耐玩）
   hitRadius:int32;
   /// 移动速度 px/s
   moveSpeed:int32;
@@ -36,7 +36,7 @@ table Player {
   magnetRadius:int32;
   /// 免费弹上限（僚机/分裂弹，不占弹匣）
   freeBulletMax:int32;
-  /// 贴图名
+  /// 玩家贴图名（player_001）
   sprite:string;
   /// 备注
   desc:string;

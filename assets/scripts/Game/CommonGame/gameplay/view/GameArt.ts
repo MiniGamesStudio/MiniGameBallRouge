@@ -1,20 +1,23 @@
 /**
- * 占位美术层：把 assets/subpackages/game（bundle 名 `game`）里的图片接到节点上
+ * 美术层：把 assets/subpackages/game（bundle 名 `game`）里的图片接到节点上
  *
- * 当前使用的素材（用户提供，全部为 80 的整数倍，正好等于一格）：
- *   game_player       80×80    玩家
- *   game_bullet       20×30    玩家子弹
- *   game_cursor       40×56    瞄准游标
- *   game_single_*     80×80    单格敌人（blue / red / green）
- *   game_double_*    160×80    两格敌人（blue / red / geen）
+ * 当前素材（用户提供）：
+ *   品质底图   white / green / blue / purple / yellow / red   128×128     白绿蓝紫金红，一格一张
+ *   怪物       monster_0001 … monster_0010                    80×(72~94)  普通与精英
+ *   BOSS       Boss_001 / Boss_002 / Boss_003                 80×(59~87)  四格 / 六格 / 八格
+ *   玩家       player_001                                     80×76
+ *   子弹       game_bullet                                    20×30
+ *   瞄准游标   game_cursor                                    40×56
+ *   背景       background/game_bg
  *
- * ⚠️ 三个必须知道的现状：
- *   1. 两格绿色素材的文件名是 **game_double_geen**（少一个 r），不是 game_double_green；
- *   2. 4/6/8 格 BOSS 暂时没有专属素材，这里用两格贴图**拉伸**到实际占格，
- *      等正式素材到位后只改 enemyArtPath 一处即可；
- *   3. 图片在 Cocos 里是「图片资源 + spriteFrame 子资源」两级结构，取 SpriteFrame 时
- *      路径可能要补 `/spriteFrame`，所以下面 loadSpriteFrame() 走两段兜底
- *      （与 engine/ui/UIBase.ts 加载按钮图标的方式保持一致）。
+ * 敌人外观的合成方式（重要）：
+ *   = 品质底图**按格平铺**（1 格 1 张，不拉伸）+ 怪物图**contain 适配**叠在中间。
+ *   底图是 128×128 的整格美术，拉伸会把描边与质感拉变形；怪物图原始宽度只有 80，
+ *   直接按占格缩放同样会变形，所以统一走 applyContainFit() 按美术自身长宽比算缩放。
+ *
+ * ⚠️ 图片在 Cocos 里是「图片资源 + spriteFrame 子资源」两级结构，取 SpriteFrame 时
+ *    路径可能要补 `/spriteFrame`，所以下面 loadSpriteFrame() 走两段兜底
+ *    （与 engine/ui/UIBase.ts 加载按钮图标的方式保持一致）。
  */
 
 import { Color, Graphics, Label, Layers, Node, Sprite, SpriteFrame, UITransform, Vec3, assetManager } from 'cc';
@@ -27,47 +30,96 @@ export const GAME_BUNDLE = 'game';
 
 /** 素材路径（相对 bundle 根，不带扩展名） */
 export const GameArtPath = {
-    player: 'texture/game_player',
+    // ── 玩家与通用 ──
+    player: 'texture/player_001',
     bullet: 'texture/game_bullet',
     cursor: 'texture/game_cursor',
-    singleBlue: 'texture/game_single_blue',
-    singleRed: 'texture/game_single_red',
-    singleGreen: 'texture/game_single_green',
-    doubleBlue: 'texture/game_double_blue',
-    doubleRed: 'texture/game_double_red',
-    /** ⚠️ 文件名确实是 geen（素材命名笔误），不要"顺手修正"成 green */
-    doubleGreen: 'texture/game_double_geen',
     background: 'background/game_bg',
+    // ── 品质底图（一格一张，128×128）──
+    tileWhite: 'texture/white',
+    tileGreen: 'texture/green',
+    tileBlue: 'texture/blue',
+    tilePurple: 'texture/purple',
+    tileYellow: 'texture/yellow',
+    tileRed: 'texture/red',
+    // ── 怪物（普通 / 精英，10 张）──
+    monster01: 'texture/monster_0001',
+    monster02: 'texture/monster_0002',
+    monster03: 'texture/monster_0003',
+    monster04: 'texture/monster_0004',
+    monster05: 'texture/monster_0005',
+    monster06: 'texture/monster_0006',
+    monster07: 'texture/monster_0007',
+    monster08: 'texture/monster_0008',
+    monster09: 'texture/monster_0009',
+    monster10: 'texture/monster_0010',
+    // ── BOSS（四格 / 六格 / 八格）──
+    bossQuad: 'texture/Boss_001',
+    bossSix: 'texture/Boss_002',
+    bossEight: 'texture/Boss_003',
 } as const;
 
-export type EnemyArtColor = 'blue' | 'red' | 'green';
+/** 品质 → 底图路径，索引与 Quality 枚举一致（0 白 / 1 绿 / 2 蓝 / 3 紫 / 4 金 / 5 红） */
+const QUALITY_TILE_PATHS: readonly string[] = [
+    GameArtPath.tileWhite,
+    GameArtPath.tileGreen,
+    GameArtPath.tileBlue,
+    GameArtPath.tilePurple,
+    GameArtPath.tileYellow,
+    GameArtPath.tileRed,
+];
 
-/**
- * 品质 → 占位配色（只有三种颜色可用）
- * 白/绿 → green、蓝 → blue、紫/金/红 → red
- */
-export function qualityArtColor(quality: Quality): EnemyArtColor {
-    switch (quality) {
-        case Quality.Blue:
-            return 'blue';
-        case Quality.Purple:
-        case Quality.Gold:
-        case Quality.Red:
-            return 'red';
-        case Quality.White:
-        case Quality.Green:
-        default:
-            return 'green';
+/** 普通 / 精英怪可用的怪物图（10 张） */
+const MONSTER_PATHS: readonly string[] = [
+    GameArtPath.monster01,
+    GameArtPath.monster02,
+    GameArtPath.monster03,
+    GameArtPath.monster04,
+    GameArtPath.monster05,
+    GameArtPath.monster06,
+    GameArtPath.monster07,
+    GameArtPath.monster08,
+    GameArtPath.monster09,
+    GameArtPath.monster10,
+];
+
+/** 四格 / 六格 / 八格 BOSS 图（索引 = shape - EnemyShape.Quad） */
+const BOSS_PATHS: readonly string[] = [GameArtPath.bossQuad, GameArtPath.bossSix, GameArtPath.bossEight];
+
+/** 稳定字符串哈希（FNV-1a）：同一个 defId 永远取到同一只怪，不会每次生成都换脸 */
+function stableHash(text: string): number {
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619) >>> 0;
     }
+    return hash >>> 0;
 }
 
-/** 体型 + 品质 → 贴图路径 */
-export function enemyArtPath(shape: EnemyShape, quality: Quality): string {
-    const color = qualityArtColor(quality);
-    const useDouble = shape !== EnemyShape.Single;
-    if (color === 'blue') return useDouble ? GameArtPath.doubleBlue : GameArtPath.singleBlue;
-    if (color === 'red') return useDouble ? GameArtPath.doubleRed : GameArtPath.singleRed;
-    return useDouble ? GameArtPath.doubleGreen : GameArtPath.singleGreen;
+/** 品质 → 底图贴图路径 */
+export function qualityArtPath(quality: Quality): string {
+    return QUALITY_TILE_PATHS[quality] || GameArtPath.tileWhite;
+}
+
+/**
+ * 怪物贴图路径
+ * 四 / 六 / 八格走 BOSS 图（与体型一一对应），普通与精英按 defId 稳定散列到 monster_0001-0010。
+ * ⚠️ P0 临时规则（6 品质 × 10 怪物 = 60 种外观组合）；正式值应走 Enemy 表的贴图列。
+ */
+export function enemyMonsterArtPath(defId: string, shape: EnemyShape): string {
+    if (shape >= EnemyShape.Quad) {
+        const index = shape - EnemyShape.Quad;
+        return BOSS_PATHS[index] || BOSS_PATHS[0];
+    }
+    return MONSTER_PATHS[stableHash(defId || 'e') % MONSTER_PATHS.length];
+}
+
+/** 敌人外观 = 品质底图（按格平铺）+ 怪物图（contain 适配） */
+export function enemyArtPaths(defId: string, shape: EnemyShape, quality: Quality): { base: string; monster: string } {
+    return {
+        base: qualityArtPath(quality),
+        monster: enemyMonsterArtPath(defId, shape),
+    };
 }
 
 /** 一张素材的加载结果 */
@@ -272,12 +324,38 @@ export function setScale(node: Node, scale: number): void {
     node.setScale(new Vec3(scale, scale, 1));
 }
 
-/** 按占格设置精灵尺寸（多格敌人用一张贴图拉伸到实际占格） */
+/** 按占格设置节点尺寸（= cols × cellSize, rows × cellSize），敌人根节点用 */
 export function applyCellSize(node: Node, cols: number, rows: number): void {
     if (!node || !node.isValid) return;
     const transform = node.getComponent(UITransform);
     if (!transform) return;
     transform.setContentSize(cols * GameTuning.cellSize, rows * GameTuning.cellSize);
+}
+
+/**
+ * contain 适配：把精灵按美术自身长宽比缩放，塞进 boxW × boxH 内并留出 margin 比例的边。
+ * 用于怪物图 / 玩家图叠在占格之上（美术原始宽度 80，占格是 128 的整数倍，直接拉伸会变形）。
+ * @returns 适配后的实际尺寸；**受击闪白的模板必须用这个尺寸**，用占格尺寸会和怪物轮廓错位
+ */
+export function applyContainFit(
+    node: Node,
+    frame: SpriteFrame | null,
+    boxW: number,
+    boxH: number,
+    margin: number
+): { width: number; height: number } | null {
+    if (!node || !node.isValid || !frame) return null;
+    const transform = node.getComponent(UITransform);
+    if (!transform) return null;
+
+    const original = frame.originalSize;
+    const artW = Math.max(1, original && original.width > 0 ? original.width : frame.rect.width);
+    const artH = Math.max(1, original && original.height > 0 ? original.height : frame.rect.height);
+    const scale = Math.max(0.01, margin) * Math.min(boxW / artW, boxH / artH);
+    const width = artW * scale;
+    const height = artH * scale;
+    transform.setContentSize(width, height);
+    return { width, height };
 }
 
 /** 把节点朝向速度方向（子弹贴图默认朝上 → 角度 = atan2 转成度） */
