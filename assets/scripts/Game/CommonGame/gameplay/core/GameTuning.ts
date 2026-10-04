@@ -96,9 +96,9 @@ export const GameTuning = {
     /** 第 1 波行数 */
     baseRowsPerWave: 3,
     /** 每波行数增量 */
-    rowsPerWaveGrowth: 1,
+    rowsPerWaveGrowth: 0.5,
     /** 同时在场的行数上限 */
-    maxRows: 30,
+    maxRows: 12,
     /** 同一行内相邻敌人的出生间隔（s） */
     spawnStagger: 0.08,
     /** 相邻两行的纵向间距（格）——行间隔时间 = 该值 × cellSize ÷ 当前波下落速度（见 buildSpawnSchedule） */
@@ -110,7 +110,7 @@ export const GameTuning = {
     /** 出生缩放动画：时长（s） */
     spawnScaleTime: 0.25,
     /** 第 1 波下落速度 px/s */
-    baseFallSpeed: 40,
+    baseFallSpeed: 20,
     /** 每波下落速度成长 */
     fallSpeedGrowth: 0.08,
     /** 下落速度成长上限倍率 */

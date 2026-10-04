@@ -16,7 +16,6 @@ export interface WaveScaling {
     rows: number;
 }
 
-/** 波次成长（§9.2）：速度 +8%/波、血量 +12%/波，各自封顶 2.5 倍；行数逐波 +1，封顶 30 */
 export function waveScaling(wave: number): WaveScaling {
     const index = Math.max(1, Math.floor(wave)) - 1;
     const speedMul = Math.min(1 + GameTuning.fallSpeedGrowth * index, GameTuning.fallSpeedCapMul);
