@@ -116,6 +116,17 @@ const DROP_STYLE: Record<DropKind, { radius: number; color: Color }> = {
     [DropKind.SuperCrystal]: { radius: 16, color: new Color(255, 120, 200, 255) },
 };
 
+/** 掉落物美术与基准尺寸（cellSize 的倍数）：经验水晶按经验值放大、魂晶按品质放大 */
+const DROP_ART: Record<DropKind, { path: string; size: number }> = {
+    [DropKind.Exp]: { path: GameArtPath.dropExp, size: 0.30 },
+    [DropKind.Coin]: { path: GameArtPath.dropCoin, size: 0.20 },
+    [DropKind.Soul]: { path: GameArtPath.dropSoul, size: 0.26 },
+    [DropKind.SuperCrystal]: { path: GameArtPath.dropSuper, size: 0.34 },
+};
+
+/** 金币掉落枚数：按品质 0~8 枚（白怪 0 枚，红怪 8 枚） */
+const COIN_COUNT_BY_QUALITY: readonly number[] = [0, 1, 3, 5, 6, 8];
+
 @ccclass('BattleView')
 export class BattleView extends Component {
     /** 异步创建：先加载占位素材，再挂组件并开局 */
@@ -594,15 +605,23 @@ export class BattleView extends Component {
         // 经验水晶：每次击杀必掉 1 枚（经验值由品质 × 类型决定）
         this.addDrop(DropKind.Exp, enemyExpValue(enemy.quality, enemy.type), enemy.x, enemy.y, scatter);
 
-        // 金币：普通怪 35% 概率，精英及以上必掉
+        // 金币：数量按品质 0~8 枚（普通怪 35% 概率，精英及以上必掉）；总值仍按配置表，拆成多枚
         const coinChance = enemy.type === EnemyType.Normal ? 0.35 : 1;
         if (RandomUtil.chance(rng, coinChance)) {
-            this.addDrop(DropKind.Coin, enemyCoinValue(enemy.quality, enemy.type), enemy.x, enemy.y, scatter);
+            const coins = COIN_COUNT_BY_QUALITY[enemy.quality] ?? 0;
+            if (coins > 0) {
+                const unit = Math.max(1, Math.round(enemyCoinValue(enemy.quality, enemy.type) / coins));
+                for (let i = 0; i < coins; i++) this.addDrop(DropKind.Coin, unit, enemy.x, enemy.y, scatter);
+            }
         }
 
-        // 魂晶：精英及以上
-        const soul = enemySoulValue(enemy.type);
-        if (soul > 0) this.addDrop(DropKind.Soul, soul, enemy.x, enemy.y, scatter);
+        // 魂晶：击杀 BOSS / 精英掉落，品质越高越大（value）× 越多（枚数）（需求 4）
+        if (enemySoulValue(enemy.type) > 0) {
+            const tier = Math.floor(enemy.quality / 2);
+            const unit = Math.max(1, tier + 1);
+            const count = Math.max(1, tier);
+            for (let i = 0; i < count; i++) this.addDrop(DropKind.Soul, unit, enemy.x, enemy.y, scatter);
+        }
 
         // 超级水晶：概率掉落
         const superCount = enemySuperCrystalCount(enemy.type, rng.next());
@@ -626,18 +645,31 @@ export class BattleView extends Component {
         };
         this.m_Drops.push(drop);
 
-        const style = DROP_STYLE[kind];
+        // 外观：经验水晶 / 金币 / 魂晶 / 超级水晶用各自的图；
+        // 经验水晶按经验值放大、魂晶按品质放大（需求 4）
+        const art = DROP_ART[kind];
+        const cell = GameTuning.cellSize;
+        const valueScale = kind === DropKind.Exp
+            ? Math.min(GameTuning.dropExpMaxScale, 1 + (value - 1) * GameTuning.dropExpScalePerValue)
+            : kind === DropKind.Soul
+                ? Math.min(GameTuning.dropSoulMaxScale, 1 + (value - 1) * GameTuning.dropSoulScalePerValue)
+                : 1;
+        const size = cell * art.size * valueScale;
         const node = makeNode(this.m_FieldRoot, `Drop_${drop.id}`);
-        const transform = node.addComponent(UITransform);
-        transform.setContentSize(style.radius * 2, style.radius * 2);
-        const graphics = node.addComponent(Graphics);
-        graphics.fillColor = style.color;
-        graphics.circle(0, 0, style.radius);
-        graphics.fill();
-        graphics.strokeColor = new Color(255, 255, 255, 220);
-        graphics.lineWidth = 2;
-        graphics.circle(0, 0, style.radius);
-        graphics.stroke();
+        const frame = getArt(this.m_Art, art.path);
+        if (frame) {
+            const sprite = createSprite(node, 'Art', frame, size, size);
+            setPos(sprite, 0, 0);
+        } else {
+            // 素材缺失兜底（正常不会走到）
+            const style = DROP_STYLE[kind];
+            const transform = node.addComponent(UITransform);
+            transform.setContentSize(style.radius * 2, style.radius * 2);
+            const graphics = node.addComponent(Graphics);
+            graphics.fillColor = style.color;
+            graphics.circle(0, 0, style.radius);
+            graphics.fill();
+        }
 
         setPos(node, drop.x, drop.y);
         this.m_DropNodes.set(drop.id, node);

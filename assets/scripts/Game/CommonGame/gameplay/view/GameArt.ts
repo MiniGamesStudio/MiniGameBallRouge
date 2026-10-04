@@ -42,6 +42,11 @@ export const GameArtPath = {
     tilePurple: 'texture/purple',
     tileYellow: 'texture/yellow',
     tileRed: 'texture/red',
+    // 掉落物（需求 4）
+    dropExp: 'texture/exp',
+    dropCoin: 'texture/coin',
+    dropSoul: 'texture/hun',
+    dropSuper: 'texture/super',
     // ── 怪物（普通 / 精英，10 张）──
     monster01: 'texture/monster_0001',
     monster02: 'texture/monster_0002',

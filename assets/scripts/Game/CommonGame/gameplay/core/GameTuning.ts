@@ -165,6 +165,11 @@ export const GameTuning = {
     artFitMargin: 0.92,
     /** 敌人品质底图九宫格切边 px：底图 128×128 的多层描边 + 圆角都在这 16px 之内 */
     baseSliceInset: 16,
+    /** 掉落物缩放：尺寸 = cellSize × 基准 × (1 + (value-1) × perValue)，封顶 max */
+    dropExpScalePerValue: 0.06,
+    dropExpMaxScale: 1.8,
+    dropSoulScalePerValue: 0.25,
+    dropSoulMaxScale: 2.0,
 
     // ─────────── 打击反馈（受击闪白 / 敌人震动） ───────────
     /** 受击闪白持续时间（s） */
