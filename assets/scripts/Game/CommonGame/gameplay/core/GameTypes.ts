@@ -158,14 +158,19 @@ export interface DropRuntime {
     magnetized: boolean;
 }
 
-/** 体型 → 占格。与策划案 §7.4 一致：4/6/8 格按 2×2、3×2、4×2 排布 */
+/**
+ * 体型 → 占格。与策划案 §7.4 一致：
+ * 单格 1×1、双格横 2×1、双格竖 1×2；**4/6/8 格为竖版** 2×2 / 2×3 / 2×4。
+ * ⚠️ 6/8 格的 rowSpan = 3 / 4（> 2）会跨"带"：`maxEnemyRowSpan` 已放宽到 4，
+ *    装箱（WaveBuilder.buildBigBand）按体型真实行数开带，不再假设"带 = 2 行"。
+ */
 export const SHAPE_SPAN: ReadonlyArray<Readonly<{ cols: number; rows: number }>> = [
     { cols: 1, rows: 1 },
     { cols: 2, rows: 1 },
     { cols: 1, rows: 2 },
     { cols: 2, rows: 2 },
-    { cols: 3, rows: 2 },
-    { cols: 4, rows: 2 },
+    { cols: 2, rows: 3 },
+    { cols: 2, rows: 4 },
 ];
 
 /** 敌人占几格（= 列数 × 行数），用于俯冲伤害与血量基数计算 */

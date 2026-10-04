@@ -120,25 +120,26 @@ function shouldSpawnBigEnemy(
     return RandomUtil.chance(rng, chance);
 }
 
-/** 造一条 2 行带：大怪优先、空位补 1 格敌人 */
+/** 造一条大怪带：行数由大怪体型决定（2 / 3 / 4 行），大怪优先、空位补 1 格敌人 */
 function buildBigBand(wave: number, rng: IRandom, opts: Required<Omit<WaveBuildOptions, 'isFinalWave'>>): BandPlan {
-    const occupied: boolean[][] = [
-        new Array(GameTuning.columns).fill(false),
-        new Array(GameTuning.columns).fill(false),
-    ];
-    const enemies: EnemySpawnSpec[] = [];
-
-    // ① 先摆大怪：4/6/8 格，权重决定体型
+    // ① 先摆大怪：4/6/8 格，权重决定体型。
+    //    **4/6/8 格都是竖版**（2×2 / 2×3 / 2×4）：列数恒为 2，行数按体型。
+    //    带高由大怪决定，所以 6/8 格占 3~4 行（不再假设"带 = 2 行"）。
     const bigShapeIndex = RandomUtil.weightedIndex(rng, opts.bigShapeWeights);
     const bigShape = [EnemyShape.Quad, EnemyShape.Six, EnemyShape.Eight][bigShapeIndex] ?? EnemyShape.Quad;
-    const bigCols = bigShape === EnemyShape.Eight ? 4 : bigShape === EnemyShape.Six ? 3 : 2;
+    const bigCols = 2;
+    const bigRows = bigShape === EnemyShape.Eight ? 4 : bigShape === EnemyShape.Six ? 3 : 2;
+    const bandRows = bigRows;
+    const occupied: boolean[][] = [];
+    for (let r = 0; r < bandRows; r++) occupied.push(new Array(GameTuning.columns).fill(false));
+    const enemies: EnemySpawnSpec[] = [];
     const maxStartCol = Math.max(0, GameTuning.columns - bigCols);
     const startCol = RandomUtil.int(rng, 0, maxStartCol);
     // 需求 2：4/6/8 格都算 BOSS —— 4 格是「小BOSS」，6/8 格是「大BOSS」
-    const bigType = bigCols >= 3 ? EnemyType.Boss : EnemyType.MiniBoss;
+    const bigType = bigShape === EnemyShape.Quad ? EnemyType.MiniBoss : EnemyType.Boss;
     const bigQuality = pickQuality(rng, wave, true);
 
-    for (let r = 0; r < 2; r++) {
+    for (let r = 0; r < bigRows; r++) {
         for (let c = startCol; c < startCol + bigCols; c++) occupied[r][c] = true;
     }
     enemies.push({
@@ -148,12 +149,12 @@ function buildBigBand(wave: number, rng: IRandom, opts: Required<Omit<WaveBuildO
         shape: bigShape,
         col: startCol,
         cols: bigCols,
-        rows: 2,
+        rows: bigRows,
         rowOffset: 0,
     });
 
     // ② 空位补 1 格敌人（不放大怪两侧、避免挤在一起时判定混乱）
-    for (let r = 0; r < 2; r++) {
+    for (let r = 0; r < bandRows; r++) {
         for (let c = 0; c < GameTuning.columns; c++) {
             if (occupied[r][c]) continue;
             if (RandomUtil.chance(rng, opts.gapChance)) continue;
@@ -173,7 +174,7 @@ function buildBigBand(wave: number, rng: IRandom, opts: Required<Omit<WaveBuildO
         }
     }
 
-    return { rows: 2, hasBigEnemy: true, enemies };
+    return { rows: bandRows, hasBigEnemy: true, enemies };
 }
 
 /** 造一条 1 行带：1 格与 2 格横混排 */
@@ -277,6 +278,11 @@ export function buildSpawnSchedule(plan: WavePlan, options: WaveBuildOptions = {
 
     // 行时钟：每个带出生前，前面已出生的内容必须先下落完"本带行数"的时间
     let clock = 0;
+    // 上一带末尾的错峰延迟：这些敌人还在"少落一段"的状态，跨带间距必须把它补回来
+    let prevDelayBudget = 0;
+    // 上一带的行数：跨带间距由"上一带有多高"决定（新带高度在几何上会被抵消掉；
+    // 保留 max() 让新带更高时按新带留，和旧行为一致）
+    let prevRows = 0;
 
     for (let b = 0; b < plan.bands.length; b++) {
         const band = plan.bands[b];
@@ -286,24 +292,35 @@ export function buildSpawnSchedule(plan: WavePlan, options: WaveBuildOptions = {
             return a.col - c.col;
         });
 
+        // 带内出现过的列，按从左到右排名 —— 错峰按"列"而不是按"排内序号"分配
+        const colRank = new Map<number, number>();
+        ordered
+            .map(s => s.col)
+            .filter((c, i, arr) => arr.indexOf(c) === i)
+            .sort((a, c) => a - c)
+            .forEach((c, i) => colRank.set(c, i));
+        const maxRank = Math.max(0, colRank.size - 1);
+
         // 两格大怪的盒子会从出生点往上顶半格，所以间距必须按"本带自己的行数"留，
-        // 否则新带的盒子上沿会插进上一带里（实测重叠 22px 就是这么来的）
-        if (b > 0) clock += band.rows * rowGap;
+        // 否则新带的盒子上沿会插进上一带里（实测重叠 22px 就是这么来的）。
+        // 另外要把上一带的错峰延迟补进时钟，否则"少落一段"的敌人会和新带贴住
+        // （竖版 BOSS 让带高变成 3~4 行后，实测 1 行带只剩 124px < 一格 128px）。
+        if (b > 0) clock += Math.max(band.rows, prevRows) * rowGap + prevDelayBudget;
         const startTime = clock;
         const stagger =
-            ordered.length > 1
-                ? Math.min(GameTuning.spawnStagger, (rowGap * GameTuning.spawnStaggerBudget) / (ordered.length - 1))
+            maxRank > 0
+                ? Math.min(GameTuning.spawnStagger, (rowGap * GameTuning.spawnStaggerBudget) / maxRank)
                 : 0;
 
-        // ⚠️ stagger 只能作用在"同一排内"。若按整带下标依次延后，下面那排就会比上面那排少落 2px，
-        // 两排贴图互相压住 2px（这就是实测到的那个 2px 重叠）。
-        // 同一排内部左右依次弹出既保留了观感，又不会破坏"带内保持队形"的刚性。
-        const rowCursor = new Map<number, number>();
+        // ⚠️ 错峰只能按"列"给：同一列的所有敌人共享同一个延迟，列与列之间才错开。
+        // 若按排内序号给，下面那排延迟更多 → 少落一段 → 两排之间精确的一格被吃掉（实测重叠 4px）；
+        // 按列给则同列纵向间距恒为整格，同时保留从左到右依次弹出的观感。
         for (const spec of ordered) {
-            const indexInRow = rowCursor.get(spec.rowOffset) ?? 0;
-            rowCursor.set(spec.rowOffset, indexInRow + 1);
-            events.push({ delay: startTime + stagger * indexInRow, spec });
+            const d = stagger * (colRank.get(spec.col) ?? 0);
+            events.push({ delay: startTime + d, spec });
         }
+        prevDelayBudget = stagger * maxRank;
+        prevRows = band.rows;
     }
 
     return events;

@@ -158,7 +158,9 @@ describe('波次装箱（需求 2/3 的关键不变量）', () => {
 
                 expect(plan.bands.length).toBeGreaterThan(0);
                 plan.bands.forEach(band => {
-                    expect([1, 2]).toContain(band.rows);
+                    // 4/6/8 格是竖版，含大怪的带可以是 2~4 行（不再固定 1~2）
+                    expect(band.rows).toBeGreaterThanOrEqual(1);
+                    expect(band.rows).toBeLessThanOrEqual(GameTuning.maxEnemyRowSpan);
                     expect(band.enemies.length).toBeGreaterThan(0);
                     rowsSum += band.rows;
 

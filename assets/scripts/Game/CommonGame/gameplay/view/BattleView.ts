@@ -148,7 +148,12 @@ export class BattleView extends Component {
     private m_Enemies: EnemyRuntime[] = [];
     private m_EnemyNodes: Map<number, Node> = new Map();
     /** 敌人受击表现（闪白 + 震动） */
-    private m_EnemyFeedback: Map<number, HitFeedback> = new Map();
+    /**
+     * 敌人的受击表现。一格 / 两格怪是「一格一张怪物图」，所以一个敌人可能挂多条
+     * （两格怪两格都要闪白 / 震动）；4/6/8 格是一张放大图，只有一条。
+     * bx / by 是节点未被震动时的基准坐标（震动直接改节点位置，必须记住基准才能精确归位）。
+     */
+    private m_EnemyFeedback: Map<number, Array<{ fb: HitFeedback; bx: number; by: number }>> = new Map();
     /** 玩家受击表现（只有闪白，不震） */
     private m_PlayerFeedback: HitFeedback | null = null;
     private m_Drops: DropRuntime[] = [];
@@ -470,35 +475,50 @@ export class BattleView extends Component {
         if (!node.getComponent(UITransform)) node.addComponent(UITransform);
         applyCellSize(node, enemy.cols, enemy.rows);
 
-        // ① 品质底图：按格平铺（一格一张，2 格怪就是两张并排），不拉伸以保住整格美术的质感
+        // ① 品质底图：**整只敌人一张**，拉伸铺满整个占格（用户拍板：接受横向拉长变形）
         const paths = enemyArtPaths(enemy.defId, enemy.shape, enemy.quality);
         const tileFrame = getArt(this.m_Art, paths.base);
-        for (let r = 0; r < enemy.rows; r++) {
-            for (let c = 0; c < enemy.cols; c++) {
-                const tile = createSprite(node, `Tile_${r}_${c}`, tileFrame, cell, cell);
-                setPos(tile, (c - (enemy.cols - 1) * 0.5) * cell, ((enemy.rows - 1) * 0.5 - r) * cell);
-            }
-        }
+        const tile = createSprite(node, 'Base', tileFrame, boxW, boxH);
+        setPos(tile, 0, 0);
 
-        // ② 怪物图：contain 适配叠在占格中间（四/六/八格走 Boss_00x）
+        // ② 怪物图：
+        //    一格 / 两格 → **一格一张**（两格怪两格各一张，把占格铺满）
+        //    4 / 6 / 8 格 → **一张放大图**铺在占格中间（走 Boss_001-003）
         const monsterFrame = getArt(this.m_Art, paths.monster);
-        const monster = createSprite(node, 'Monster', monsterFrame);
-        const fit = applyContainFit(monster, monsterFrame, boxW, boxH, GameTuning.artFitMargin);
+        const perCellArt = enemy.cols * enemy.rows <= 2;
+        const feedbackList: Array<{ fb: HitFeedback; bx: number; by: number }> = [];
+
+        if (perCellArt) {
+            for (let r = 0; r < enemy.rows; r++) {
+                for (let c = 0; c < enemy.cols; c++) {
+                    const cx = (c - (enemy.cols - 1) * 0.5) * cell;
+                    const cy = ((enemy.rows - 1) * 0.5 - r) * cell;
+                    const art = createSprite(node, `Monster_${r}_${c}`, monsterFrame);
+                    const fit = applyContainFit(art, monsterFrame, cell, cell, GameTuning.artFitMargin);
+                    setPos(art, cx, cy);
+                    // 闪白挂在这一格上：模板尺寸用该格怪物图的实际尺寸（用占格尺寸会与轮廓错位）
+                    feedbackList.push({
+                        fb: HitFeedback.attach(art, monsterFrame, fit ? fit.width : cell, fit ? fit.height : cell, true),
+                        bx: cx,
+                        by: cy,
+                    });
+                }
+            }
+        } else {
+            const art = createSprite(node, 'Monster', monsterFrame);
+            // 一张放大图：contain 到整个占格（margin 给 1，尽量占满且不拉变形）
+            const fit = applyContainFit(art, monsterFrame, boxW, boxH, 1);
+            feedbackList.push({
+                fb: HitFeedback.attach(art, monsterFrame, fit ? fit.width : boxW, fit ? fit.height : boxH, true),
+                bx: 0,
+                by: 0,
+            });
+        }
 
         setPos(node, enemy.x, enemy.y);
         setScale(node, enemyVisualScale(enemy));
         this.m_EnemyNodes.set(enemy.id, node);
-        // 闪白只闪怪物轮廓（底图不闪）：模板尺寸要用适配后的实际尺寸，用占格尺寸会与轮廓错位
-        this.m_EnemyFeedback.set(
-            enemy.id,
-            HitFeedback.attach(
-                node,
-                monsterFrame,
-                fit ? fit.width : boxW,
-                fit ? fit.height : boxH,
-                true
-            )
-        );
+        this.m_EnemyFeedback.set(enemy.id, feedbackList);
     }
 
     private updateEnemies(d: number): void {
@@ -516,8 +536,10 @@ export class BattleView extends Component {
                 setPos(node, enemy.x, enemy.y);
                 setScale(node, enemyVisualScale(enemy));
                 // 震动改的是节点位置，所以必须在本帧基准位置定好之后再更新
-                const feedback = this.m_EnemyFeedback.get(enemy.id);
-                if (feedback) feedback.update(d, enemy.x, enemy.y);
+                const feedbackList = this.m_EnemyFeedback.get(enemy.id);
+                for (let f = 0; feedbackList && f < feedbackList.length; f++) {
+                    feedbackList[f].fb.update(d, feedbackList[f].bx, feedbackList[f].by);
+                }
             }
             if (isDead(enemy)) dead.push(enemy.id);
         }
@@ -541,8 +563,8 @@ export class BattleView extends Component {
         enemy.hp -= this.m_Stats.bulletDamage;
 
         // 命中即闪白 + 震动（致死那一下也闪，观感上"打中了"更明确）
-        const feedback = this.m_EnemyFeedback.get(enemy.id);
-        if (feedback) feedback.trigger();
+        const feedbackList = this.m_EnemyFeedback.get(enemy.id);
+        for (let i = 0; feedbackList && i < feedbackList.length; i++) feedbackList[i].fb.trigger();
         if (enemy.hp > 0) return;
 
         killEnemy(enemy);

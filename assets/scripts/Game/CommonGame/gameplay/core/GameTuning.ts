@@ -88,7 +88,7 @@ export const GameTuning = {
     /** 类型掉落超级水晶的个数 */
     superCrystalCount: [0, 1, 1, 2],
     /** 关卡行模板里单个敌人最多占的行数（大怪优先装箱的前提） */
-    maxEnemyRowSpan: 2,
+    maxEnemyRowSpan: 4,
 
     // ─────────── 关卡生成与下落（§9） ───────────
     /** 每关波数（占位默认值，正式值走 Wave 表） */
