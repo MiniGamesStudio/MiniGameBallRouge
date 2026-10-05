@@ -266,13 +266,38 @@ function resolveEnemyHits(bullet: BulletRuntime, world: BulletWorld, result: Bul
     if (bounce) applyBounce(bullet, bounce);
 }
 
+/**
+ * 敌人（矩形）的**镜面反射**：按 `circleBoxHit` 给出的最浅穿透轴，翻转对应轴的速度分量。
+ *
+ * ⚠️ 这是全工程**唯一**的敌人反射速度公式：子弹仿真（`applyBounce`）与瞄准辅助射线
+ * （`AimGuide.traceAimGuide`）都调它，保证「辅助射线」与「真实弹道」不会各写一套规则后慢慢跑偏。
+ *
+ * 反射规则（与墙反射同理，入射角 = 反射角）：`BoxHit.normalX / normalY` 只有一个非 0，
+ * 沿法线轴取 `|v|` 再乘法线符号（撞左 / 右面翻 vx，撞上 / 下面翻 vy），另一轴分量原样保留。
+ *
+ * @returns 反射后的速度（不修改入参，纯函数）
+ */
+export function reflectOffEnemyBox(
+    vx: number,
+    vy: number,
+    normalX: number,
+    normalY: number
+): { vx: number; vy: number } {
+    return {
+        vx: normalX !== 0 ? normalX * Math.abs(vx) : vx,
+        vy: normalY !== 0 ? normalY * Math.abs(vy) : vy,
+    };
+}
+
 /** 沿最浅轴弹开，并把子弹推到敌人表面外，避免卡在体内反复触发 */
 function applyBounce(bullet: BulletRuntime, hit: BoxHit): void {
+    // 速度翻转走共用公式（与辅助射线同源）；位置外推只属于真实子弹（射线没有"位置"要推）
+    const next = reflectOffEnemyBox(bullet.vx, bullet.vy, hit.normalX, hit.normalY);
+    bullet.vx = next.vx;
+    bullet.vy = next.vy;
     if (hit.axis === 'x') {
-        bullet.vx = hit.normalX * Math.abs(bullet.vx);
         bullet.x += hit.normalX * (hit.depth + 0.5);
     } else {
-        bullet.vy = hit.normalY * Math.abs(bullet.vy);
         bullet.y += hit.normalY * (hit.depth + 0.5);
     }
 }

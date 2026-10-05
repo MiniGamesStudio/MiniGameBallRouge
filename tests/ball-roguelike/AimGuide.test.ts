@@ -25,7 +25,11 @@ import {
     isHittable,
     pickAutoAimTarget,
 } from '../../assets/scripts/Game/CommonGame/gameplay/core/EnemySim';
-import { screenBounds } from '../../assets/scripts/Game/CommonGame/gameplay/core/BoardMath';
+import {
+    boxFromCells,
+    circleHitsBox,
+    screenBounds,
+} from '../../assets/scripts/Game/CommonGame/gameplay/core/BoardMath';
 import { GameTuning } from '../../assets/scripts/Game/CommonGame/gameplay/core/GameTuning';
 
 const B = screenBounds();
@@ -37,6 +41,23 @@ const FINE_DT = 1e-4;
 const TOL = 0.25;
 /** 比对多次反弹时用「不截断」的预算，避免 aimGuideBounceLength 干扰几何一致性 */
 const NO_CAP = 1e9;
+/**
+ * 与真实子弹比对**撞敌人**的翻转位置时，法线方向额外放宽到 0.7px。
+ * 原因：`BulletSim.applyBounce` 会把子弹沿法线推出敌人表面外 `depth(≤0.144) + 0.5` px
+ * （防止卡在体内反复触发），而射线顶点严格落在**接触面**上；切向仍用与撞墙相同的 `TOL`(0.25)。
+ */
+const TOL_ENEMY = 0.7;
+/** 单格边长（与 boxFromCells 同源） */
+const CELL = GameTuning.cellSize;
+
+/** 折线逐点比对（同一套几何应给出逐位相同的结果；1e-9 只为避开 -0/+0 这类表示差异） */
+function expectVertsClose(a: { x: number; y: number }[], b: { x: number; y: number }[]): void {
+    expect(a.length).toBe(b.length);
+    a.forEach((v, i) => {
+        expect(v.x).toBeCloseTo(b[i].x, 9);
+        expect(v.y).toBeCloseTo(b[i].y, 9);
+    });
+}
 
 function makeEnemy(
     id: number,
@@ -65,14 +86,31 @@ function makeEnemy(
     };
 }
 
-/** 只关心撞墙的子弹世界：玩家放到极远，避免半路被回收 / 影响回身 */
-function wallOnlyWorld(): BulletWorld {
+/**
+ * 子弹世界：玩家放到极远，避免半路被回收 / 影响回身。
+ *
+ * `queryEnemies` **照抄** `BattleView.queryHittableEnemies` 的过滤（只用 `isHittable`）
+ * 与判定形状（`circleHitsBox` + `boxFromCells`）—— 否则「射线与真实弹道一致」就是自欺欺人。
+ */
+function bulletWorld(enemies: EnemyRuntime[] = []): BulletWorld {
     return {
         playerX: 0,
         playerY: -1e6,
         catchRadius: GameTuning.catchRadius,
-        queryEnemies: () => [] as EnemyRuntime[],
+        queryEnemies: (x: number, y: number, radius: number) => {
+            const out: EnemyRuntime[] = [];
+            enemies.forEach(e => {
+                if (!isHittable(e)) return;
+                if (circleHitsBox(x, y, radius, boxFromCells(e.x, e.y, e.cols, e.rows))) out.push(e);
+            });
+            return out;
+        },
     };
+}
+
+/** 只关心撞墙的子弹世界（等价于敌人列表为空） */
+function wallOnlyWorld(): BulletWorld {
+    return bulletWorld();
 }
 
 interface WallFlip {
@@ -90,10 +128,21 @@ interface WallSlide {
     returned: boolean;
 }
 
-/** 用真实仿真跑一发子弹，记录前 maxFlips 次「顶/左/右墙」翻转时的位置与速度 */
-function runRealBullet(px: number, py: number, dx: number, dy: number, maxFlips: number): WallSlide {
+/**
+ * 用真实仿真跑一发子弹，记录前 maxFlips 次方向翻转时的位置与速度
+ * （**墙与敌人不分家**，按发生顺序记录；翻转轴由 flipX / flipY 指出）
+ * @param enemies 敌人列表（默认空 = 只跟墙打交道），过滤与判定形状与 BattleView 给子弹的那份一致
+ */
+function runRealBullet(
+    px: number,
+    py: number,
+    dx: number,
+    dy: number,
+    maxFlips: number,
+    enemies: EnemyRuntime[] = []
+): WallSlide {
     const dir = aimVelocity(px, py, px + dx, py + dy, GameTuning.bulletSpeed);
-    const world = wallOnlyWorld();
+    const world = bulletWorld(enemies);
     const bullet = createBullet(1, px, py, dir.vx, dir.vy, true);
     const flips: WallFlip[] = [];
     let returned = false;
@@ -298,6 +347,264 @@ describe('瞄准辅助射线与真实子弹弹道一致（与 BulletSim 同源�
         expect(bullet.y).toBeCloseTo(B.bottom + R, 6);
         expect(verts.length).toBe(2); // 射线停在底墙，不假装它会弹回来
         expect(verts[1].y).toBeCloseTo(bullet.y, 6);
+    });
+});
+
+describe('瞄准辅助射线：遇敌反射的几何（入射角 = 反射角）', () => {
+    /** 单格敌人的判定框沿 x / y 双向外扩子弹半径后的半宽半高 = 64 + 16 = 80 */
+    const SPAN = CELL / 2 + R;
+
+    it('下表面：从下方朝上打 → 在敌人下沿折返（vy 翻转、vx 不变），不到顶墙', () => {
+        const enemy = makeEnemy(1, 0, 0);
+        const verts = traceAimGuide(0, -547, 0, 1, 1, NO_CAP, R, [enemy]);
+
+        expect(verts.length).toBe(3);
+        expect(verts[1].x).toBeCloseTo(0, 6);
+        expect(verts[1].y).toBeCloseTo(-SPAN, 6); // 敌人下沿 0 − 80，而不是顶墙 651
+        const d0 = segmentDir(verts, 0);
+        const d1 = segmentDir(verts, 1);
+        expect(d1.x).toBeCloseTo(d0.x, 6);
+        expect(d1.y).toBeCloseTo(-d0.y, 6);
+        expect(verts[2].y).toBeCloseTo(B.bottom + R, 6); // 折返朝下 → 底墙收尾（底墙仍不反射）
+    });
+
+    it('上表面：从上方朝下打 → 在敌人上沿折返（vy 翻转、vx 不变）', () => {
+        const enemy = makeEnemy(1, 0, 0);
+        const verts = traceAimGuide(0, 547, 0, -1, 1, NO_CAP, R, [enemy]);
+
+        expect(verts.length).toBe(3);
+        expect(verts[1].y).toBeCloseTo(SPAN, 6); // 敌人上沿 0 + 80
+        const d0 = segmentDir(verts, 0);
+        const d1 = segmentDir(verts, 1);
+        expect(d1.x).toBeCloseTo(d0.x, 6);
+        expect(d1.y).toBeCloseTo(-d0.y, 6);
+        expect(verts[2].y).toBeCloseTo(B.top - R, 6);
+    });
+
+    it('左表面：从左侧朝右打 → 在敌人左沿折返（vx 翻转、vy 不变）', () => {
+        const enemy = makeEnemy(1, 200, 0);
+        const verts = traceAimGuide(0, 0, 1, 0, 1, NO_CAP, R, [enemy]);
+
+        expect(verts.length).toBe(3);
+        expect(verts[1].x).toBeCloseTo(200 - SPAN, 6); // 120
+        expect(verts[1].y).toBeCloseTo(0, 6);
+        const d0 = segmentDir(verts, 0);
+        const d1 = segmentDir(verts, 1);
+        expect(d1.x).toBeCloseTo(-d0.x, 6);
+        expect(d1.y).toBeCloseTo(d0.y, 6);
+        expect(verts[2].x).toBeCloseTo(B.left + R, 6); // 折返朝左 → 左墙
+    });
+
+    it('右表面：从右侧朝左打 → 在敌人右沿折返（vx 翻转、vy 不变）', () => {
+        const enemy = makeEnemy(1, 200, 0);
+        const verts = traceAimGuide(350, 0, -1, 0, 1, NO_CAP, R, [enemy]);
+
+        expect(verts.length).toBe(3);
+        expect(verts[1].x).toBeCloseTo(200 + SPAN, 6); // 280
+        expect(segmentDir(verts, 1).x).toBeCloseTo(1, 6);
+        expect(verts[2].x).toBeCloseTo(B.right - R, 6); // 折返朝右 → 右墙
+    });
+
+    it('斜射左表面：(1,2) 方向入射 → 只有 vx 翻转（真正的镜面反射，不是正撞）', () => {
+        const enemy = makeEnemy(1, 0, 0);
+        // 起点 (-200,-300) 沿 (1,2)：先进入判定框左沿 x = −80，交点 y = −60（在框内）
+        const verts = traceAimGuide(-200, -300, 1, 2, 1, NO_CAP, R, [enemy]);
+
+        expect(verts.length).toBe(3);
+        expect(verts[1].x).toBeCloseTo(-SPAN, 6); // −80
+        expect(verts[1].y).toBeCloseTo(-60, 6);
+
+        const d0 = segmentDir(verts, 0);
+        const d1 = segmentDir(verts, 1);
+        const s = Math.sqrt(1 + 4);
+        expect(d0.x).toBeCloseTo(1 / s, 6);
+        expect(d0.y).toBeCloseTo(2 / s, 6);
+        expect(d1.x).toBeCloseTo(-1 / s, 6); // 左 / 右面：法线沿 x → 只翻 x 分量
+        expect(d1.y).toBeCloseTo(2 / s, 6);
+        expect(verts[2].x).toBeCloseTo(B.left + R, 6); // 反射后朝左上 → 左墙
+    });
+
+    it('敌人在墙之后（不可达）：仍按墙反射，结果与「没有敌人」逐点相同', () => {
+        // 顶墙线 651 < 敌人判定框下沿 820：射线先撞顶墙（刚出生的敌人就在屏上方）
+        const aboveScreen = makeEnemy(1, 0, 900);
+        const withEnemy = traceAimGuide(0, -547, 0, 1, 1, NO_CAP, R, [aboveScreen]);
+        const without = traceAimGuide(0, -547, 0, 1, 1, NO_CAP, R, []);
+        expect(withEnemy[1].y).toBeCloseTo(B.top - R, 6);
+        expectVertsClose(withEnemy, without);
+
+        // 右墙同理：敌人整体在右墙之外
+        const rightOut = makeEnemy(2, 500, 0);
+        const a = traceAimGuide(0, 0, 1, 0, 1, NO_CAP, R, [rightOut]);
+        const b = traceAimGuide(0, 0, 1, 0, 1, NO_CAP, R, []);
+        expectVertsClose(a, b);
+    });
+
+    it('多个敌人：取最近的那个交点（与数组顺序无关）', () => {
+        const far = makeEnemy(1, 0, 400);
+        const near = makeEnemy(2, 0, 200);
+        const a = traceAimGuide(0, -547, 0, 1, 1, NO_CAP, R, [far, near]);
+        const b = traceAimGuide(0, -547, 0, 1, 1, NO_CAP, R, [near, far]);
+
+        expect(a[1].y).toBeCloseTo(200 - SPAN, 6); // 120：近敌下沿
+        expectVertsClose(a, b);
+    });
+
+    it('敌人判定框越过顶墙时比墙更近：撞敌人（顺序与真实子弹一致）', () => {
+        // 敌人中心 y = 700（刚出生、还没进屏）：判定框下沿 = 620 < 顶墙线 651
+        const enemy = makeEnemy(1, 0, 700);
+        const verts = traceAimGuide(0, -547, 0, 1, 1, NO_CAP, R, [enemy]);
+
+        expect(verts[1].y).toBeCloseTo(700 - SPAN, 6); // 620
+        expect(segmentDir(verts, 1).y).toBeCloseTo(-1, 6); // vy 翻转 → 折返朝下
+
+        // 真实子弹同样在 620 折返（此时还没到顶墙线）
+        const { flips } = runRealBullet(0, -547, 0, 1, 1, [enemy]);
+        expect(flips.length).toBe(1);
+        expect(flips[0].vy).toBeLessThan(0);
+        expect(Math.abs(flips[0].y - (700 - SPAN))).toBeLessThanOrEqual(TOL_ENEMY);
+    });
+});
+
+describe('瞄准辅助射线：与真实子弹逐点一致（含遇敌反弹）', () => {
+    /** [起点 x, 起点 y, 方向 x, 方向 y, 敌人 x, 敌人 y]：每个用例都先撞敌人再撞墙 */
+    const ENEMY_CASES: Array<[number, number, number, number, number, number]> = [
+        [0, -547, 0, 1, 0, 0],        // 正上方：撞敌人下表面 → 折返撞底墙
+        [0, 547, 0, -1, 0, 0],        // 正下方：撞敌人上表面 → 折返撞顶墙
+        [0, 0, 1, 0, 200, 0],         // 正右：撞敌人左表面 → 折返撞左墙
+        [-300, -547, 1, 2, 0, 0],     // 斜向：撞敌人下表面 → 折返撞底墙
+    ];
+
+    it('撞敌人的位置与射线顶点重合（切向 0.25 / 法向 0.7 = 子弹被推出表面的量）', () => {
+        ENEMY_CASES.forEach(([px, py, dx, dy, ex, ey]) => {
+            const enemy = makeEnemy(1, ex, ey);
+            const { flips } = runRealBullet(px, py, dx, dy, 2, [enemy]);
+            const verts = traceAimGuide(px, py, dx, dy, 2, NO_CAP, R, [enemy]);
+
+            expect(flips.length).toBeGreaterThan(0);
+            // 与撞墙用例同一条等式：顶点 = 起点 + 每个翻转点 + 一个收尾顶点
+            expect(verts.length).toBe(flips.length + 2);
+
+            flips.forEach((flip, i) => {
+                const v = verts[i + 1];
+                expect(v).toBeDefined();
+                // 翻转轴 = 法线轴：允许 applyBounce 的 depth(≤0.144) + 0.5 推出量
+                const dNormal = flip.flipX ? Math.abs(flip.x - v.x) : Math.abs(flip.y - v.y);
+                // 另一轴 = 切向：与撞墙用同一把尺子
+                const dTangent = flip.flipX ? Math.abs(flip.y - v.y) : Math.abs(flip.x - v.x);
+                expect(dNormal).toBeLessThanOrEqual(TOL_ENEMY);
+                expect(dTangent).toBeLessThanOrEqual(TOL);
+            });
+        });
+    });
+
+    it('反射后的方向与真实子弹完全一致（含遇敌反射）', () => {
+        ENEMY_CASES.forEach(([px, py, dx, dy, ex, ey]) => {
+            const enemy = makeEnemy(1, ex, ey);
+            const { flips } = runRealBullet(px, py, dx, dy, 2, [enemy]);
+            const verts = traceAimGuide(px, py, dx, dy, 2, NO_CAP, R, [enemy]);
+
+            expect(flips.length).toBeGreaterThan(0);
+            flips.forEach((flip, i) => {
+                const dir = segmentDir(verts, i + 1);
+                const speed = Math.sqrt(flip.vx * flip.vx + flip.vy * flip.vy);
+                expect(dir.x).toBeCloseTo(flip.vx / speed, 6);
+                expect(dir.y).toBeCloseTo(flip.vy / speed, 6);
+            });
+        });
+    });
+
+    it('连续弹跳不穿模：真实子弹撞敌人后不会卡在敌人内部（每次翻转都推到表面之外）', () => {
+        ENEMY_CASES.forEach(([px, py, dx, dy, ex, ey]) => {
+            const enemy = makeEnemy(1, ex, ey);
+            const dir = aimVelocity(px, py, px + dx, py + dy, GameTuning.bulletSpeed);
+            const world = bulletWorld([enemy]);
+            const bullet = createBullet(1, px, py, dir.vx, dir.vy, true);
+
+            let enteredEnemyBox = 0;
+            for (let i = 0; i < 400000 && bullet.state === BulletState.Flying; i++) {
+                stepBullet(bullet, FINE_DT, world);
+                // 判定框内部（矩形两轴各外扩 bulletRadius）—— 子弹不该停在里面
+                const inside =
+                    Math.abs(bullet.x - enemy.x) < enemy.cols * CELL * 0.5 + R - TOL &&
+                    Math.abs(bullet.y - enemy.y) < enemy.rows * CELL * 0.5 + R - TOL;
+                if (inside) enteredEnemyBox++;
+            }
+            expect(bullet.state).toBe(BulletState.Returning); // 最终正常回身，没有卡死
+            expect(enteredEnemyBox).toBe(0);
+        });
+    });
+});
+
+describe('瞄准辅助射线：遇敌的边界情形', () => {
+    const SPAN = CELL / 2 + R;
+
+    it('敌人正好贴在起点附近：立刻在敌人表面折返，不产生零长线段', () => {
+        const enemy = makeEnemy(1, 0, 0);
+        const verts = traceAimGuide(0, -SPAN - 0.5, 0, 1, 1, NO_CAP, R, [enemy]);
+
+        expect(verts.length).toBe(3);
+        expect(verts[0].y).toBeCloseTo(-SPAN - 0.5, 6);
+        expect(verts[1].y).toBeCloseTo(-SPAN, 6); // 折返点 = 敌人下沿
+        expect(segmentDir(verts, 1).y).toBeCloseTo(-1, 6);
+    });
+
+    it('起点已落在敌人判定框内：按最浅穿透轴立刻反射（与 circleBoxHit / 真实子弹第一子步一致）', () => {
+        const enemy = makeEnemy(1, 0, 0);
+        // 玩家在框内、中心上方 60px（|dy| = 60 < 80），朝下打 → 下表面更浅 → vy 翻成向上
+        const verts = traceAimGuide(0, 60, 0, -1, 1, NO_CAP, R, [enemy]);
+        expect(verts.length).toBe(2);
+        expect(verts[0]).toEqual({ x: 0, y: 60 });
+        expect(segmentDir(verts, 0).y).toBeCloseTo(1, 6); // 主射线就朝上（方向已被反射）
+        expect(verts[1].y).toBeCloseTo(B.top - R, 6);
+
+        // 真实子弹：同样在第一子步就翻成向上
+        const { flips } = runRealBullet(0, 60, 0, -1, 1, [enemy]);
+        expect(flips.length).toBe(1);
+        expect(flips[0].vy).toBeGreaterThan(0);
+    });
+
+    it('敌人在 aimGuideBounceLength 截断之外：被忽略（截断点仍是长度上限）', () => {
+        // 敌人放在玩家**身后**（判定框上沿 y = −550，正好在起点 −547 的下方 3px）：
+        // 主射线朝上打不会碰到它，只有「撞顶墙后折返朝下」的反弹段才会遇到它
+        const enemy = makeEnemy(1, 0, -630);
+        const capped = traceAimGuide(0, -547, 0, 1, 1, 200, R, [enemy]);
+        expect(capped.length).toBe(3);
+        expect(capped[2].y).toBeCloseTo(B.top - R - 200, 6); // 451：被长度截断，没走到敌人（−550）
+
+        // 预算够长时同一个敌人会被撞到（证明上面不是「敌人根本没参与求交」）
+        const full = traceAimGuide(0, -547, 0, 1, 2, 2000, R, [enemy]);
+        expect(full[2].y).toBeCloseTo(-630 + SPAN, 6); // −550：敌人判定框上沿
+        expect(segmentDir(full, 2).y).toBeCloseTo(1, 6); // 撞上表面 → vy 翻回向上
+    });
+
+    it('不可命中的敌人（出生动画中 / 已死）不挡射线：与没有敌人时逐点相同', () => {
+        const ignored = [
+            makeEnemy(1, 0, -200, EnemyState.Spawning),
+            makeEnemy(2, 0, -100, EnemyState.Dead),
+        ];
+        const withIgnored = traceAimGuide(0, -547, 0, 1, 1, NO_CAP, R, ignored);
+        const without = traceAimGuide(0, -547, 0, 1, 1, NO_CAP, R, []);
+
+        expect(withIgnored[1].y).toBeCloseTo(B.top - R, 6); // 仍然撞顶墙
+        expectVertsClose(withIgnored, without);
+    });
+
+    it('不可命中的敌人不参与「取最近」：更近的已死敌人顶不掉可命中的敌人', () => {
+        const dead = makeEnemy(1, 0, -200, EnemyState.Dead);
+        const live = makeEnemy(2, 0, 200);
+        const verts = traceAimGuide(0, -547, 0, 1, 1, NO_CAP, R, [dead, live]);
+
+        expect(verts[1].y).toBeCloseTo(200 - SPAN, 6); // 120：可命中敌人的下沿
+    });
+
+    it('纯函数：不改敌人坐标、不改传入数组', () => {
+        const a = makeEnemy(1, 0, 0);
+        const b = makeEnemy(2, 0, 400, EnemyState.Dead);
+        const list = [a, b];
+        const before = JSON.stringify(list);
+
+        traceAimGuide(0, -547, 0, 1, 2, NO_CAP, R, list);
+        expect(JSON.stringify(list)).toBe(before);
     });
 });
 

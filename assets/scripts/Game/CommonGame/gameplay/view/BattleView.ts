@@ -78,7 +78,7 @@ const { ccclass } = _decorator;
 
 /** 游标位置夹取半径（浮标外接圆）：把瞄准点夹在屏幕内，浮标才不会跑出屏 */
 const CURSOR_CLAMP_RADIUS = 45;
-/** 瞄准辅助射线默认反射次数：1 = 主射线 + 首段反弹射线（与真实弹道一致） */
+/** 瞄准辅助射线默认反射次数：1 = 主射线 + 首段反弹射线（与真实弹道一致；反射对象可能是墙、也可能是敌人） */
 const AIM_GUIDE_BOUNCE = 1;
 /** 浮标贴屏幕边缘时保留的余量 px（≈半个浮标高度）：保证浮标整体不出屏、随时可见 */
 const CURSOR_FLOAT_EDGE_MARGIN = 48;
@@ -510,10 +510,12 @@ export class BattleView extends Component {
     }
 
     /**
-     * 画瞄准辅助射线：主射线（玩家中心 → 第一次与墙相交）+ 首段反弹段（真实反射方向续画）。
+     * 画瞄准辅助射线：主射线（玩家中心 → 第一次与**墙或敌人**相交）+ 首段反弹段（真实反射方向续画）。
      *
-     * 顶点全部来自 core 纯函数 `traceAimGuide`，它与 `BulletSim` 共用同一套边界与反射实现，
-     * 所以画出来的折线就是真实子弹的前两段弹道（底墙不反射：子弹在那里转入回身，射线到此为止）。
+     * 顶点全部来自 core 纯函数 `traceAimGuide`，它与 `BulletSim` 共用同一套边界、判定形状与反射实现：
+     * 顶/左/右墙镜面反射、遇敌按命中面反射（真实子弹撞敌人本来就只反弹不消失），
+     * 底墙不反射（子弹在那里转入回身，射线到此为止）。
+     * 传入当帧的 `m_Enemies`（本函数在 `updateEnemies` 之后调用）→ 敌人移动后射线每帧自动重算。
      */
     private drawAimGuide(): void {
         const ray = this.m_AimRay;
@@ -529,7 +531,10 @@ export class BattleView extends Component {
             this.m_PlayerY,
             this.m_CursorX - this.m_PlayerX,
             this.m_CursorY - this.m_PlayerY,
-            AIM_GUIDE_BOUNCE
+            AIM_GUIDE_BOUNCE,
+            GameTuning.aimGuideBounceLength,
+            GameTuning.bulletRadius,
+            this.m_Enemies
         );
         if (verts.length < 2) return; // 退化方向（瞄准点与玩家重合）：不画
 

@@ -65,7 +65,7 @@
 | v0.3 | —— | 制作人重定义核心设计（原 §26），加入敌人三轴模型、掉落成长、可配置化要求 |
 | **v1.0** | **2026-10-03** | **本文档**：按 5+2 条要求重构全文，收敛为可开发的策划文档；补齐配置表模板、验收标准、旧编号映射 |
 | **v1.1** | **2026-10-03** | **可玩版实测修复**：占位美术真正显示（SpriteFrame 两段式加载 + 缺图可见兜底）；敌人生成节奏与下落速度联动，消除行间重叠 |
-| **v1.9** | **2026-10-04** | **操作方案 A + 瞄准辅助射线**：①**按住玩家 = 走位**（`playerGrabRadius` **74px** = 1.25 × 玩家球显示半径 ≈ 58.9px）、**其它任意处点击/拖动 = 调整射击方向**（按下即生效），两个触摸**独立 id 可同时生效**（一手走位一手调角度）；②瞄准浮标**降级为纯方向标识、不可拖动**，删除 `isPressOnCursor()` 与 `CURSOR_GRAB_BAND`；③新增**兜底自动瞄准**：瞄准触摸空闲 `autoAimDelay` = **2.0s** 后每帧锁定**最近的可命中敌人**（`pickAutoAimTarget`，走位不打断、瞄准触摸立即接管、无目标保持最后方向）；④新增**瞄准辅助射线 + 首段反弹射线**：与真实弹道**同源**（复用 `BulletSim.reflectOffWalls` / `hitsBottomWall`，相交半径 = `bulletRadius`），反弹段到「第二次相交」或 `aimGuideBounceLength` = **900px** **取短者**，底墙不反射（子弹在那里转入回身），线宽 `aimGuideWidth` = **3px**、透明度 `aimGuideAlpha` = **130** / 反弹段 `aimGuideBounceAlpha` = **80**，层级**在敌人之下、背景之上**（见 **附录 J**） |
+| **v1.9** | **2026-10-04** | **操作方案 A + 瞄准辅助射线**：①**按住玩家 = 走位**（`playerGrabRadius` **74px** = 1.25 × 玩家球显示半径 ≈ 58.9px）、**其它任意处点击/拖动 = 调整射击方向**（按下即生效），两个触摸**独立 id 可同时生效**（一手走位一手调角度）；②瞄准浮标**降级为纯方向标识、不可拖动**，删除 `isPressOnCursor()` 与 `CURSOR_GRAB_BAND`；③新增**兜底自动瞄准**：瞄准触摸空闲 `autoAimDelay` = **2.0s** 后每帧锁定**最近的可命中敌人**（`pickAutoAimTarget`，走位不打断、瞄准触摸立即接管、无目标保持最后方向）；④新增**瞄准辅助射线 + 首段反弹射线**：与真实弹道**同源**（复用 `BulletSim.reflectOffWalls` / `hitsBottomWall`，相交半径 = `bulletRadius`），反弹段到「第二次相交」或 `aimGuideBounceLength` = **900px** **取短者**，底墙不反射（子弹在那里转入回身）；**遇墙与遇敌都会反射**（敌人判定框与子弹判定同源、与墙一起取最近交点），线宽 `aimGuideWidth` = **6 px**、透明度 `aimGuideAlpha` = **130** / 反弹段 `aimGuideBounceAlpha` = **80**，层级**在敌人之下、背景之上**（见 **附录 J**） |
 | **v1.8** | **2026-10-04** | **伤害飘字 + 暴击**：敌人/玩家受伤飘伤害数字，敌人·普通🟡暖黄 / 敌人·暴击🟠橙红 / 玩家·普通🔴亮红 / 玩家·暴击🟣紫红**四色区分**，统一**描边 2.5px + 加粗**；数字**从 0 放大**（0→1.3×→1.0×→0.85×）+ **缓出上浮 110px**，**全程 1.0s**；出生点在 **32px 圆内均匀随机**；新增**暴击**（15% / 1.6×）（见 **附录 I**） |
 | **v1.7** | **2026-10-04** | **掉落 4 图 + 瞄准浮标外围圆**：接入经验水晶 `texture/exp`（**经验值越大图越大**）、金币 `texture/coin`（**按品质掉 0~8 枚**，总收益不变）、魂晶 `texture/hun`（**BOSS 品质越高越大越多**）、超级水晶 `texture/super`；瞄准浮标改为**玩家子节点**并**绕玩家外围圆旋转**（半径 = 玩家图显示半径 + 5 ≈ 64px），玩家与浮标**层级都在敌人之上**（见 **附录 H**） |
 | **v1.6** | **2026-10-04** | **难度曲线重排**：下落速度砍半（`baseFallSpeed` 40 → **20**），行数成长同步减半（`rowsPerWaveGrowth` 1 → **0.5**、`maxRows` 30 → **12**）；曲线改为"行数 3→7.5 + 速度 20→34 + 血量 1.0→2.08"三轴联动，一波 23~34 s、BOSS 波 45~50 s（见 **附录 G**） |
@@ -113,7 +113,7 @@
 
 **已实现（P0）**：双指操作（拖玩家 / 拖游标，游标贴玩家外围圆旋转（半径 = 玩家图显示半径 + 5px），玩家与浮标层级**恒在敌人 / 子弹 / 掉落之上**）、自动开火与弹匣账本、子弹弹射与底墙回身与主动接弹、防穿模子步进与命中去重、敌人逐行生成（品质底图整只一张、九宫格拉伸 + 怪物图叠加，带缩放弹出动画）与缓慢下落、越线 1 s 判定与俯冲（放大 → 缩小 → 命中判定）、经验水晶掉落与磁吸拾取、升级三选一（满级不出现、连升连弹）、开局天赋三选一、波次推进与过关 / 失败结算、HUD（血量 / 弹匣 / 波次 / 等级经验条）、受击反馈（敌我闪白 + 敌人轻微震动）。
 
-**L1 单测**：`tests/ball-roguelike/`（jest + ts-jest，共 32 条，全绿）覆盖子弹三条铁律（底墙回身 / 回身穿透不结算 / 不永久卡死）、出膛保护与防穿模子步进、命中接触窗口去重、经验曲线与连升、波次成长封顶、装箱不变量（不重叠 / 不出界 / 不降级）、俯冲判定与走位躲避、技能三选一与满级过滤。跑法：`npx jest --selectProjects ball-roguelike`。旧六边形地形那套测试单独保留为 `hex-terrain` 项目（其源码已随旧玩法删除，因此目前是红的）。
+**L1 单测**：`tests/ball-roguelike/`（jest + ts-jest，共 65 条，全绿）覆盖子弹三条铁律（底墙回身 / 回身穿透不结算 / 不永久卡死）、出膛保护与防穿模子步进、命中接触窗口去重、**瞄准辅助射线与真实弹道逐点一致（含遇敌反射）**、经验曲线与连升、波次成长封顶、装箱不变量（不重叠 / 不出界 / 不降级）、俯冲判定与走位躲避、技能三选一与满级过滤。跑法：`npx jest --selectProjects ball-roguelike`。旧六边形地形那套测试单独保留为 `hex-terrain` 项目（其源码已随旧玩法删除，因此目前是红的）。
 
 **还没做（P1+）**：接 FlatBuffers 配置表（现数值在 `GameTuning`，覆盖接口已留）、敌人攻击手段（射箭 / 子弹 / 激光 / 直线冲击）与 BOSS 多阶段、技能进化与融合、超级水晶三种用途、金币刷新与购买、外围加点与皮肤、音效与正式 UI 面板、伤害数字等表现。
 
@@ -185,7 +185,7 @@
 - 单指时"按哪里"就决定干什么：**按在球上 = 走位，按在别处 = 瞄准**（不再有"必须先抓住浮标"这一步）；
 - 玩家移动范围夹在设计区域内（用 `playerHitRadius` 留边）；瞄准点同样夹在屏幕内（用浮标外接圆半径 45 px）；
 - **瞄准浮标已降级为纯"方向标识"，不可拖动**：仍贴在玩家外围圆上（半径 = 玩家图显示半径 + `cursorOrbitGap`），玩家贴近屏幕边缘时会被压回屏内保证可见；它只表示方向，**抓取判定已删除**（`isPressOnCursor()` / `CURSOR_GRAB_BAND`）；
-- 另有**瞄准辅助射线 + 首段反弹射线**（从玩家中心沿瞄准方向画到墙、再按真实反射方向续画一段），与真实弹道同源，见 **附录 J**；
+- 另有**瞄准辅助射线 + 首段反弹射线**（从玩家中心沿瞄准方向画到**最近的墙或敌人**、再按真实反射方向续画一段；**遇墙与遇敌都会反射**，底墙不反射），与真实弹道同源，见 **附录 J**（J-4 规则 / J-7 为什么不是玩法改动）；
 - 设计意图：把"走位"和"瞄准"彻底拆成两根手指，且瞄准**不再需要先抓住浮标**（任意处按下即是瞄准），单手也能玩（先按住球走位，抬手后在别处点一下调方向）；无人瞄准 2 s 后自动接管，避免"忘记瞄 = 一直打空"。
 
 ## 5. 场地、坐标与度量单位
@@ -1700,10 +1700,11 @@ GamePanel
 | 抓玩家半径（按下点到玩家中心 ≤ 该值 = **移动玩家**，否则 = **瞄准**） | **74 px**（= 1.25 × 玩家球显示半径 ≈ 58.9 px） | `playerGrabRadius` |
 | 兜底自动瞄准延迟（**瞄准触摸**空闲该秒数后锁最近可命中敌人；`<= 0` 关闭；拖玩家不计入） | **2.0 s** | `autoAimDelay` |
 | 瞄准辅助射线开关 | **true** | `aimGuideEnabled` |
-| 瞄准辅助射线宽度 | **3 px** | `aimGuideWidth` |
+| 瞄准辅助射线宽度 | **6 px** | `aimGuideWidth` |
 | 主射线不透明度（半透明白，0~255） | **130** | `aimGuideAlpha` |
 | 首段反弹射线不透明度（比主射线更淡，0~255） | **80** | `aimGuideBounceAlpha` |
 | 首段反弹射线最大长度（与「第二次与墙相交」**取短者**） | **900 px** | `aimGuideBounceLength` |
+| 瞄准辅助射线反射对象（**遇墙与遇敌都会反射**；底墙不反射、画到那里为止） | **顶/左/右墙 + 所有可命中敌人**（一起取**最近**交点；遇敌按命中面反射：左/右面翻 `vx`、上/下面翻 `vy`；敌人判定框 = 占格外扩 `bulletRadius`，与子弹判定同源） | 复用 `bulletRadius` + `isHittable()`；**不新增调参项**（见附录 J-7：真实子弹本来就遇敌反弹，不是玩法改动） |
 | 浮标贴屏幕边缘的保留余量 | 48 px | `CURSOR_FLOAT_EDGE_MARGIN`（`BattleView` 常量） |
 
 ## 25. 平衡方法（可复用，不依赖旧结论）
@@ -2442,20 +2443,23 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 | 手动接管 | **瞄准触摸**的按下 / 移动 → 空闲计时**归零**，立即交回手动 |
 | 走位不打断 | **拖动玩家不清零**空闲计时 —— 一边走位一边打不会把自动瞄准掐掉 |
 
-### J-4 瞄准辅助射线 + 首段反弹射线
+### J-4 瞄准辅助射线 + 首段反弹射线（**遇墙与遇敌都会反射**）
 
 | 项 | 规则 |
 |---|---|
-| 主射线 | 从**玩家中心**沿**当前瞄准方向**画一条细线，直到与**场地边界**相交 |
-| 首段反弹射线 | 在第一次相交点按**真实反射方向**续画第二段：到「第二次相交」或到 `aimGuideBounceLength`（**900 px**），**取其短者** |
-| 与真实弹道一致 | 边界与反射**复用仿真那一套**，不另写近似：`BoardMath.screenBounds()` 取边界、`BulletSim.reflectOffWalls()` 做顶/左/右墙镜面反射（`stepBullet` 也调它）、`BulletSim.hitsBottomWall()` 判底墙；相交半径 = `GameTuning.bulletRadius` → 射线顶点与真实子弹的反弹点落在**同一几何位置** |
+| 主射线 | 从**玩家中心**沿**当前瞄准方向**画一条细线，直到与**最近的墙或敌人**相交 |
+| 首段反弹射线 | 在第一次相交点按**真实反射方向**续画第二段：到「第二次相交」或到 `aimGuideBounceLength`（**900 px**），**取其短者**。第一次相交点**可能是墙、也可能是敌人** |
+| 与真实弹道一致 | 边界与反射**复用仿真那一套**，不另写近似：`BoardMath.screenBounds()` 取边界、`BulletSim.reflectOffWalls()` 做顶/左/右墙镜面反射（`stepBullet` 也调它）、`BulletSim.hitsBottomWall()` 判底墙；相交半径 = `GameTuning.bulletRadius`；**敌人判定框 = `EnemySim.enemyBox()`（占格 `cols × rows` 与中心点）沿 x / y 两轴外扩 `bulletRadius`** —— 真实子弹 `BoardMath.circleBoxHit()` / `circleHitsBox()` 用的就是这个矩形（矩形两轴各外扩半径，**不是**圆角矩形），**不是另写一套近似**；敌人速度翻转 = `BulletSim.reflectOffEnemyBox()`（`applyBounce` 用的同一个公式）→ 射线顶点与真实子弹的反弹点落在**同一几何位置** |
 | 底墙 | **不反射**：真实子弹撞底墙转入「回身」直飞玩家（§6.3 铁律 2），所以射线画到底墙为止（与真实子弹在**同一位置**收尾） |
-| 表现 | 细线 `aimGuideWidth` = **3 px**；半透明白 `aimGuideAlpha` = **130**，反弹段更淡 `aimGuideBounceAlpha` = **80**；总开关 `aimGuideEnabled` |
+| 遇敌反射 | 真实子弹撞敌人本来就**只反弹、不消失、不被吃掉**（§6.3 铁律 1：`BulletSim.resolveEnemyHits()` → `applyBounce()`），所以射线**必须**跟着反射 —— 这是让射线「说真话」，**不是**玩法改动。过滤规则与交给子弹的那份列表完全一致：`isHittable()`（出生动画中 / 已死的不挡弹）。命中面反射规则：**左 / 右面翻 `vx`，上 / 下面翻 `vy`**（入射角 = 反射角） |
+| 求交顺序 | **所有墙 + 所有可命中敌人**一起比距离，取**最近**的那个交点：命中敌人则该段在敌人处结束并按命中面反射，命中墙则按墙规则。两者**完全重合时按墙处理**（真实仿真每个子步都是「先判墙、再判敌人」，此处同序） |
+| 表现 | 细线 `aimGuideWidth` = **6 px**；半透明白 `aimGuideAlpha` = **130**，反弹段更淡 `aimGuideBounceAlpha` = **80**；总开关 `aimGuideEnabled`。**遇敌反射与遇墙反射画在同一条折线上、同一套线宽与透明度**（不额外配色） |
 | 层级 | 两个绘制层（`AimRay` / `AimBounceRay`）在 `m_FieldRoot` 下**最早**创建 → 渲染顺序 = **背景 < 射线 < 敌人 < 子弹/掉落/飘字**，即**在敌人之下、背景之上**，不遮挡敌人与飘字 |
-| 更新 | 每帧在 `updateAim()` 里跟随瞄准方向重画（**自动瞄准时也更新**），且放在敌人更新之后 → 用的是当帧最新的敌人位置 |
+| 更新 | 每帧在 `updateAim()` 里跟随瞄准方向重画（**自动瞄准时也更新**），且放在敌人更新之后 → 用的是当帧最新的敌人位置；`traceAimGuide` 内部**不缓存**敌人，敌人一动射线下帧就跟着动 |
 | 退化方向 | 瞄准点与玩家重合时不画线（与 `aimVelocity` 的退化兜底「朝正上方」保持一致的处理口径） |
+| 退化：起点已在敌人判定框内 | 敌人压到玩家身上时，起点已落在判定框内：立刻按 `circleBoxHit()` 的**最浅穿透轴**反射（与真实子弹第一子步同一套判定），不生成零长线段；已沿法线朝外飞的不再重复反射（真实子弹此刻已被 `applyBounce` 推出表面外） |
 
-**怎么验证与真实弹道一致**（L1 单测 `tests/ball-roguelike/AimGuide.test.ts`）：把**真实子弹**用极细步长（每步 0.144 px，远小于 `maxSubStepDistance`，子步数恒为 1）跑过第一 / 第二次撞墙，再把两次**翻转位置**与 `traceAimGuide` 的顶点**逐点比对**（容差 0.25 px），同时比对反射后的方向分量；另外单独覆盖：左 / 右 / 顶墙「入射角 = 反射角」、撞角落时两轴同时翻转、底墙在**同一位置**收尾、反弹段被 `aimGuideBounceLength` 截断。
+**怎么验证与真实弹道一致**（L1 单测 `tests/ball-roguelike/AimGuide.test.ts`）：把**真实子弹**用极细步长（每步 0.144 px，远小于 `maxSubStepDistance`，子步数恒为 1）跑过第一 / 第二次相交，再把两次**翻转位置**与 `traceAimGuide` 的顶点**逐点比对**（撞墙容差 0.25 px；**撞敌人**时法线方向放宽到 0.7 px —— `applyBounce` 会把子弹沿法线推出表面外 `深度 + 0.5` px，而射线顶点严格落在接触面上，切向仍用 0.25 px 同一把尺子），同时比对反射后的方向分量；另外单独覆盖：左 / 右 / 顶墙「入射角 = 反射角」、**敌人左 / 右 / 上 / 下四面与斜射的遇敌反射**、撞角落时两轴同时翻转、**多敌人取最近**、**敌人在墙之后仍按墙反射**、**不可命中敌人被忽略**、**敌人在 `aimGuideBounceLength` 截断之外被忽略**、**起点落在敌人判定框内的退化输入**、底墙在**同一位置**收尾、反弹段被 `aimGuideBounceLength` 截断。
 
 ### J-5 新增调参项（`GameTuning`）
 
@@ -2464,10 +2468,12 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 | `playerGrabRadius` | 74 | 抓玩家半径 px（≤ 该值 = 移动玩家，否则 = 瞄准） |
 | `autoAimDelay` | 2.0 | 兜底自动瞄准空闲延迟 s（`<= 0` 关闭） |
 | `aimGuideEnabled` | true | 瞄准辅助射线总开关 |
-| `aimGuideWidth` | 3 | 辅助射线宽度 px |
+| `aimGuideWidth` | 6 | 辅助射线宽度 px |
 | `aimGuideAlpha` | 130 | 主射线不透明度（0~255） |
 | `aimGuideBounceAlpha` | 80 | 首段反弹射线不透明度（0~255） |
 | `aimGuideBounceLength` | 900 | 首段反弹射线最大长度 px |
+
+**「遇敌反射」本轮（v1.9 补丁）不新增任何调参项**：敌人求交复用现有的 `bulletRadius`（判定半径，与子弹同源）与 `enemyBox()`（占格盒），反射复用 `reflectOffEnemyBox()`，射线的开关 / 宽度 / 透明度全部沿用上表 —— 因为真实子弹**本来就**遇敌反弹（§6.3 铁律 1），射线只是把既有事实画出来，**玩法数值一个都没动**。若将来真要把子弹改成「撞敌人消失」，射线会立刻变成谎话：那时才需要引入开关（例如 `bulletBounceOnEnemy`），并且必须同步射线与该开关。
 
 **删除的常量**：`CURSOR_GRAB_BAND`（`BattleView`）、`isPressOnCursor()`（方法）；`CURSOR_GRAB_RADIUS` **改名为** `CURSOR_CLAMP_RADIUS`（语义从「抓取半径」变成「瞄准点夹取半径」）。
 
@@ -2475,7 +2481,18 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 
 | 文件 | 内容 |
 |---|---|
-| `gameplay/core/AimGuide.ts`（新） | `traceAimGuide(playerX, playerY, dirX, dirY, maxBounce, maxBounceLength, radius)` → 折线顶点数组（含起点） |
-| `gameplay/core/BulletSim.ts` | 抽出并导出 `reflectOffWalls()` / `hitsBottomWall()`，`stepBullet` 与射线**共用同一实现** |
+| `gameplay/core/AimGuide.ts`（新） | `traceAimGuide(playerX, playerY, dirX, dirY, maxBounce, maxBounceLength, radius, enemies)` → 折线顶点数组（含起点）；`enemies` 为当帧敌人列表（默认空 = 只跟墙求交），内部不缓存 |
+| `gameplay/core/BulletSim.ts` | 抽出并导出 `reflectOffWalls()` / `hitsBottomWall()` / **`reflectOffEnemyBox()`**，`stepBullet` 与射线**共用同一实现** |
 | `gameplay/core/EnemySim.ts` | 新增 `pickAutoAimTarget(playerX, playerY, enemies)` |
-| `gameplay/view/BattleView.ts` | 方案 A 输入（`onTouchStart/Move/End`）、兜底自动瞄准与射线重画（`updateAim()` / `drawAimGuide()` / `syncCursorNode()` / `setAimTarget()`） |
+| `gameplay/view/BattleView.ts` | 方案 A 输入（`onTouchStart/Move/End`）、兜底自动瞄准与射线重画（`updateAim()` / `drawAimGuide()` / `syncCursorNode()` / `setAimTarget()`）；`drawAimGuide()` 把**当帧** `m_Enemies` 传给 `traceAimGuide` |
+
+### J-7 遇敌反射（v1.9 补丁）：为什么**不是**玩法改动
+
+| 问题 | 结论 |
+|---|---|
+| 真实子弹撞到敌人会怎样？ | **反弹**（不是消失、不是穿透、不是被吃掉）。`BulletSim.stepBullet()` 的子步里，先判底墙与顶/左/右墙，再 `resolveEnemyHits()`：对每个接触到的敌人调 `BoardMath.circleBoxHit()` 取**最浅穿透轴**，由 `applyBounce()` 翻转该轴速度分量并把子弹推出表面 —— 与 §6.3 铁律 1「撞敌人、撞墙都只反弹不消失」一致 |
+| 那本轮改了什么？ | **只改射线**：把敌人纳入 `traceAimGuide()` 的求交范围（与墙一起取最近交点），遇敌按命中面反射。**子弹、伤害、数值、掉落一律未动**，因此**不是玩法改动**、不影响平衡 |
+| 判定形状怎么保证一致？ | 射线直接用 `EnemySim.enemyBox(enemy)`（= `BoardMath.boxFromCells(x, y, cols, rows)`，多格占位的 `boxW/boxH` 与中心点都出自这里）并按 `bulletRadius` 两轴外扩 —— 与真实子弹 `circleBoxHit()` / `circleHitsBox()` 的判定区域是**同一个矩形**；速度翻转用 `BulletSim.reflectOffEnemyBox()`（`applyBounce()` 里的同一个公式） |
+| 敌人被击杀 / 还没出生会挡弹吗？ | **不会**。过滤用 `isHittable()`，与 `BattleView.queryHittableEnemies()` 交给子弹的那份列表完全一致（出生动画中与已死的不参与碰撞） |
+| 敌人会动，射线会过期吗？ | **不会**。`traceAimGuide()` 是纯函数、内部不缓存敌人；`BattleView.update()` 的顺序是 `updateEnemies()` → `updateAim()` → `drawAimGuide()`，每帧都用当帧最新位置重算 |
+| 以后若把子弹改成「撞敌人消失」 | 射线会立刻变成谎话（画出子弹不会走的折线）。届时必须：① 在 `GameTuning` 加开关（如 `bulletBounceOnEnemy`），② 让射线与子弹**共用**同一开关与同一判定，③ 在本附录把它标注为**玩法改动** |
