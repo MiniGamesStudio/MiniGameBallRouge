@@ -81,6 +81,13 @@ const CURSOR_GRAB_RADIUS = 45;
 const CURSOR_GRAB_BAND = 90;
 /** 浮标贴屏幕边缘时保留的余量 px（≈半个浮标高度）：保证浮标整体不出屏、随时可抓 */
 const CURSOR_FLOAT_EDGE_MARGIN = 48;
+/** 伤害飘字颜色：敌人·普通 / 敌人·暴击 / 玩家·普通 / 玩家·暴击 */
+const DMG_ENEMY = new Color(255, 232, 120, 255);
+const DMG_ENEMY_CRIT = new Color(255, 120, 40, 255);
+const DMG_PLAYER = new Color(255, 92, 92, 255);
+const DMG_PLAYER_CRIT = new Color(255, 60, 200, 255);
+/** 飘字描边色（需求：描边 + 加粗） */
+const DMG_OUTLINE = new Color(20, 12, 0, 255);
 /** 波次之间的喘息时间 */
 const WAVE_INTERVAL = 1.2;
 /** 调试 HUD（显示本局生效数值，方便对着策划案核数值） */
@@ -155,6 +162,8 @@ export class BattleView extends Component {
     private m_CursorNode: Node = null;
     /** 瞄准浮标外围圆半径 = 玩家图显示半径 + cursorOrbitGap（开局创建玩家时算出） */
     private m_OrbitRadius = 0;
+    /** 伤害飘字（需求：敌人/玩家、普通/暴击颜色不同） */
+    private m_DamageTexts: { node: Node; x0: number; y0: number; life: number }[] = [];
 
     private m_PlayerX: number = 0;
     private m_PlayerY: number = 0;
@@ -390,6 +399,7 @@ export class BattleView extends Component {
         this.updateDrops(d);
         this.updateWaveFlow(d);
         this.updateHud(false);
+        this.updateDamageTexts(d);
         this.keepPlayerOnTop();
     }
 
@@ -626,7 +636,11 @@ export class BattleView extends Component {
     /** 子弹命中敌人：扣血 → 可能死亡 → 掉落 */
     private onBulletHitEnemy(_bullet: BulletRuntime, enemy: EnemyRuntime): void {
         if (!isHittable(enemy) || enemy.hp <= 0) return;
-        enemy.hp -= this.m_Stats.bulletDamage;
+        // 暴击判定（需求：普通/暴击飘字颜色不同）
+        const crit = this.m_Rng.next() < GameTuning.critChance;
+        const dmg = Math.max(1, Math.round(this.m_Stats.bulletDamage * (crit ? GameTuning.critMul : 1)));
+        enemy.hp -= dmg;
+        this.spawnDamageText(enemy.x, enemy.y, dmg, crit, false);
 
         // 命中即闪白 + 震动（致死那一下也闪，观感上"打中了"更明确）
         const feedbackList = this.m_EnemyFeedback.get(enemy.id);
@@ -636,6 +650,55 @@ export class BattleView extends Component {
         killEnemy(enemy);
         this.m_Kills++;
         this.spawnDrops(enemy);
+    }
+
+    /** 飘伤害数字：敌人（普通/暴击）与玩家（普通/暴击）四种颜色（需求） */
+    private spawnDamageText(x: number, y: number, value: number, crit: boolean, isPlayer: boolean): void {
+        const color = isPlayer ? (crit ? DMG_PLAYER_CRIT : DMG_PLAYER) : (crit ? DMG_ENEMY_CRIT : DMG_ENEMY);
+        const size = Math.round(GameTuning.cellSize * (crit ? 0.34 : 0.26));
+        const label = createLabel(this.m_FieldRoot, `Dmg_${value}`, crit ? `${value}!` : `${value}`, size, color);
+        // 描边 + 加粗（需求 6）
+        label.isBold = true;
+        label.enableOutline = true;
+        label.outlineColor = DMG_OUTLINE;
+        label.outlineWidth = GameTuning.damageTextOutline;
+        // 出生点：圆形内均匀随机（√u × 半径），避免连击时数字叠在同一位置（需求）
+        const sc = GameTuning.damageTextScatter;
+        const an = this.m_Rng.next() * Math.PI * 2;
+        const rd = Math.sqrt(this.m_Rng.next()) * sc;
+        const px = x + Math.cos(an) * rd;
+        const py = y + Math.sin(an) * rd;
+        setPos(label.node, px, py);
+        // 从 0 放大（需求 6）
+        label.node.setScale(0, 0, 1);
+        this.m_DamageTexts.push({ node: label.node, x0: px, y0: py, life: GameTuning.damageTextLife });
+    }
+
+    /** 伤害飘字：上浮 + 缩小 + 到期销毁 */
+    private updateDamageTexts(d: number): void {
+        if (this.m_DamageTexts.length === 0) return;
+        for (let i = this.m_DamageTexts.length - 1; i >= 0; i--) {
+            const t = this.m_DamageTexts[i];
+            t.life -= d;
+            if (t.life <= 0 || !t.node.isValid) {
+                if (t.node.isValid) t.node.destroy();
+                this.m_DamageTexts.splice(i, 1);
+                continue;
+            }
+            const life = GameTuning.damageTextLife;
+            const passed = life - t.life;
+            const pop = GameTuning.damageTextPop;
+            const peak = GameTuning.damageTextPopScale;
+            // ① 弹出：0 → peak　② 回稳：peak → 1　③ 尾段缩到 0.85
+            let sc: number;
+            if (passed < pop) sc = peak * (passed / pop);
+            else if (passed < pop * 2) sc = peak - (peak - 1) * ((passed - pop) / pop);
+            else sc = 1 - 0.15 * ((passed - pop * 2) / Math.max(1e-4, life - pop * 2));
+            t.node.setScale(sc, sc, 1);
+            // 向上飘：缓出（先快后慢）
+            const rk = 1 - (1 - passed / life) * (1 - passed / life);
+            t.node.setPosition(t.x0, t.y0 + GameTuning.damageTextRise * rk, 0);
+        }
     }
 
     /** 击杀掉落：经验水晶必掉，金币/魂晶/超级水晶按品质与类型（需求 4） */
@@ -886,7 +949,11 @@ export class BattleView extends Component {
     private onPlayerDamaged(damage: number): void {
         if (this.m_Finished) return;
         this.m_PlayerFeedback?.trigger();
-        const dead = damagePlayer(this.m_Stats, damage);
+        // 敌人攻击也会暴击（需求：不同伤害类型不同颜色）
+        const pCrit = this.m_Rng.next() < GameTuning.critChance;
+        const pDmg = pCrit ? Math.max(1, Math.round(damage * GameTuning.critMul)) : damage;
+        const dead = damagePlayer(this.m_Stats, pDmg);
+        this.spawnDamageText(this.m_PlayerX, this.m_PlayerY, pDmg, pCrit, true);
         if (dead) this.finishGameOver();
     }
 

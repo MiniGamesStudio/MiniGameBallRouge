@@ -165,6 +165,17 @@ export const GameTuning = {
     artFitMargin: 0.92,
     /** 瞄准浮标外围圆半径 = 玩家图显示半径 + 该值 px */
     cursorOrbitGap: 50,
+    /** 伤害飘字：暴击概率 / 暴击倍率 / 存活时间 s / 上浮距离 px */
+    critChance: 0.15,
+    critMul: 1.6,
+    damageTextLife: 1.0,
+    damageTextRise: 110,
+    /** 飘字弹出：弹出时长 s / 弹出峰值缩放 / 描边宽度 px */
+    damageTextPop: 0.15,
+    damageTextPopScale: 1.3,
+    damageTextOutline: 2.5,
+    /** 飘字出生点：圆形内随机半径 px（避免多个数字叠在同一位置） */
+    damageTextScatter: 32,
     /** 敌人品质底图九宫格切边 px：底图 128×128 的多层描边 + 圆角都在这 16px 之内 */
     baseSliceInset: 16,
     /** 掉落物缩放：尺寸 = cellSize × 基准 × (1 + (value-1) × perValue)，封顶 max */
