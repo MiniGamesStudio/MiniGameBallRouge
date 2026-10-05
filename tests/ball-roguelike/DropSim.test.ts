@@ -1,17 +1,21 @@
 /**
- * L1 单测：掉落物接入**滚动世界**（v1.10）—— 锁步 / 暂停 / 磁吸叠加 / 越俯冲线自动收取
+ * L1 单测：掉落物接入**滚动世界**（v1.10）+ **v1.10 修订口径**（只有吸收范围才结算 / 屏幕底 −30 才消失 / 绝不上升）
  *
- * 对应策划案 §11.1（散落）、§11.3（拾取与超时）、§24.5（数值）、§24.8 与**附录 K**。
+ * 对应策划案 §11.1（散落）、§11.3（拾取与消失）、§24.5（数值）、§24.8 与**附录 K-4 / K-8**。
  * 全部是纯逻辑（不依赖 cc），被测对象是 core/DropSim.ts + core/ScrollWorld.ts + core/EnemySim.ts。
  *
- * 刻意不做"看起来差不多"的断言，而是把四条口径写成**可证伪的不变量**：
+ * 刻意不做"看起来差不多"的断言，而是把六条口径写成**可证伪的不变量**：
  *   ① **锁步**：同一帧内 掉落物位移 === 敌人位移 === 背景块位移 === `scrollDelta`（**逐帧**断言）；
  *   ② **暂停**：暂停 N 帧 delta ≡ 0、掉落物 y **分毫未动**；恢复后第一帧位移**恰为** `fallSpeed × dt`
  *      （**不补**暂停期间累积的量）；
  *   ③ **磁吸叠加**：磁吸位移与滚动位移**相加**（顺序写死"先滚动、再磁吸"，谁也**不覆盖**谁），
  *      且**世界暂停时磁吸照常**（磁吸是玩家侧行为，与"俯冲不受世界暂停影响"同口径）；
- *   ④ **自动收取**：越过 `diveLineY` 的**那一帧**就被收取，且与正常拾取走**同一条结算路径**
- *      （两者返回同一个结果值 → 视图层只可能有一条结算分支；本文件直接断言两边账本一字不差）。
+ *   ④ **只有进入吸收范围才结算**：`pickupRadius` 是**唯一**能产生收益的路径（`Collected`）。
+ *      越俯冲线、寿命耗尽、一路滚到屏幕底 —— **一条都不结算**（`settleCalls === 0` 且账本为空）；
+ *   ⑤ **消失 = 越过屏幕底边再往下 `dropDespawnBelowScreen`(30) px**：返回 `Fell`（与 `Collected`
+ *      **严格区分**）→ 视图层**只销毁节点、绝不结算**；没到线就**不消失**（这就是"更晚消失"）；
+ *   ⑥ **绝不向上移动**（`dropNeverMovesUp`）：逐帧断言 `y_new <= y_prev`；玩家在掉落物**上方**时，
+ *      磁吸只能**横向**靠拢（`x` 照常被吸），**抬不起**掉落物。
  */
 import {
     DropKind,
@@ -31,7 +35,7 @@ import {
     wrapBackgroundOffset,
 } from '../../assets/scripts/Game/CommonGame/gameplay/core/ScrollWorld';
 import { EnemyWorld, applyStopBlocking, stepEnemy } from '../../assets/scripts/Game/CommonGame/gameplay/core/EnemySim';
-import { DropOutcome, DropWorld, hasDropCrossedDiveLine, stepDrop } from '../../assets/scripts/Game/CommonGame/gameplay/core/DropSim';
+import { DropOutcome, DropWorld, dropDespawnY, stepDrop } from '../../assets/scripts/Game/CommonGame/gameplay/core/DropSim';
 import { waveScaling } from '../../assets/scripts/Game/CommonGame/gameplay/core/MathModels';
 import { screenBounds } from '../../assets/scripts/Game/CommonGame/gameplay/core/BoardMath';
 import { RunStats, createRunStats, grantExp } from '../../assets/scripts/Game/CommonGame/gameplay/core/PlayerStats';
@@ -48,6 +52,8 @@ const BASE = gridAlignedBottom(GameTuning.spawnLineY, screenBounds().bottom, CEL
 const SPEED = waveScaling(1).fallSpeed;
 /** 单帧滚动位移 */
 const DELTA = SPEED * DT;
+/** 屏幕底边（世界坐标） */
+const BOTTOM = screenBounds().bottom;
 
 /** 造一个掉落物（默认"离玩家很远、不会磁吸"的坐标；`life` 默认取真源数值） */
 function makeDrop(id: number, x: number, y: number, kind: DropKind = DropKind.Exp, value = 6): DropRuntime {
@@ -73,7 +79,6 @@ function makeWorld(overrides: Partial<DropWorld> = {}): DropWorld {
         magnetRadius: 0,
         pickupRadius: GameTuning.pickupRadius,
         magnetSpeed: GameTuning.magnetSpeed,
-        autoCollectAtDiveLine: GameTuning.dropAutoCollectAtDiveLine,
         scrollDelta: DELTA,
         ...overrides,
     };
@@ -101,7 +106,7 @@ function makeFallingEnemy(id: number): EnemyRuntime {
     };
 }
 
-/** 本局账本（只为"同一条结算路径"的相等性断言服务） */
+/** 本局账本（只为"结算有没有真的发生"服务） */
 interface Ledger {
     coins: number;
     souls: number;
@@ -115,11 +120,15 @@ function emptyLedger(): Ledger {
     return { coins: 0, souls: 0, supers: 0, levelUps: 0, level: 1, exp: 0 };
 }
 
+/** 结算入口被调用的次数（证明"只有拾取会结算"，其余出路**一次都不结算**） */
+let settleCalls = 0;
+
 /**
  * 与 `BattleView.collectDrop()` **同一套**结算（照抄那 4 个 case，连 `m_PendingLevelUps` 的
- * 累计口径都保留）—— 用来证明"自动收取"与"正常拾取"的账本**一字不差**。
+ * 累计口径都保留）—— 用来证明"收益只可能来自吸收范围"。
  */
 function collectLikeView(stats: RunStats, ledger: Ledger, drop: DropRuntime): void {
+    settleCalls++; // ← 唯一的结算入口：调用次数 = "结算真的发生了多少次"
     switch (drop.kind) {
         case DropKind.Exp: {
             const levels = grantExp(stats, drop.value);
@@ -144,7 +153,7 @@ function collectLikeView(stats: RunStats, ledger: Ledger, drop: DropRuntime): vo
 
 /**
  * 镜像 `BattleView.updateDrops()` 的分支结构：core 只回 `DropOutcome`，
- * **结算只有一个入口**（`Collected` → `collectLikeView`），`Expired` 只移除不结算。
+ * **结算只有一个入口**（`Collected` → `collectLikeView`），`Fell` **只移除、绝不结算**。
  */
 function runDropFrames(
     drops: Array<DropRuntime | null>,
@@ -153,9 +162,9 @@ function runDropFrames(
     world: DropWorld,
     frames: number,
     deltaPerFrame: number
-): { collected: number[]; expired: number[] } {
+): { collected: number[]; fell: number[] } {
     const collected: number[] = [];
-    const expired: number[] = [];
+    const fell: number[] = [];
     for (let f = 0; f < frames; f++) {
         world.scrollDelta = deltaPerFrame;
         for (let i = 0; i < drops.length; i++) {
@@ -168,13 +177,13 @@ function runDropFrames(
                 drops[i] = null;
                 continue;
             }
-            if (outcome === DropOutcome.Expired) {
-                expired.push(drop.id);
+            if (outcome === DropOutcome.Fell) {
+                fell.push(drop.id); // 出屏消失：只从场上移除，**一分收益都不加**
                 drops[i] = null;
             }
         }
     }
-    return { collected, expired };
+    return { collected, fell };
 }
 
 describe('锁步：掉落物位移 === 敌人位移 === 背景块位移 === scrollDelta（逐帧）', () => {
@@ -191,7 +200,7 @@ describe('锁步：掉落物位移 === 敌人位移 === 背景块位移 === scro
         let travelled = 0;
         // 600 帧只走 200px < 一个背景周期 768 → **不跨回绕**，第 0 块始终是同一块，
         // 所以块位移可以直接相减（与 ScrollWorld.test.ts 的同一处口径一致）
-        const frames = 600; // 10 s（< dropLifeTime 15 s，避免超时干扰锁步断言）
+        const frames = 600; // 10 s（远没到出屏线，避免消失干扰锁步断言）
 
         for (let i = 0; i < frames; i++) {
             const step = advanceWorldScroll(scrollY, SPEED, DT, false, H);
@@ -199,7 +208,7 @@ describe('锁步：掉落物位移 === 敌人位移 === 背景块位移 === scro
             travelled += step.delta;
 
             const tileBefore = backgroundTileBottomY(BASE, wrapBackgroundOffset(scrollY - step.delta, H), H, 0);
-            const tileAfter = backgroundTileBottomY(BASE, scrollY, H, 0);
+            const tileAfter = backgroundTileBottomY(BASE, wrapBackgroundOffset(scrollY, H), H, 0);
 
             const dropBefore = drop.y;
             const enemyBefore = enemy.y;
@@ -221,15 +230,16 @@ describe('锁步：掉落物位移 === 敌人位移 === 背景块位移 === scro
         expect(travelled).toBeGreaterThan(100); // 确实滚了（不是"一直没动"的假通过）
         expect(drop.y).toBeCloseTo(dropY0 - travelled, 6);
         expect(enemy.y).toBeCloseTo(enemyY0 - travelled, 6);
+        expect(drop.y).toBeGreaterThan(dropDespawnY()); // 整段都在场上（没到出屏线）
     });
 
     it('长跑 5000 帧（跨多次背景回绕）不漂移：掉落物与敌人累计位移完全一致', () => {
         const enemy = makeFallingEnemy(2);
-        // 故意把两者放到屏幕外**很高处**：整段长跑都不会越俯冲线
-        // → 敌人全程 Falling、掉落物全程 Alive（本条测的是"位移锁步"，不是越线）
+        // 故意把两者放到屏幕外**很高处**：整段长跑都不会滚到出屏线
+        // → 敌人全程 Falling、掉落物全程 Alive（本条测的是"位移锁步"，不是越线/消失）
         enemy.y = 1300;
         const drop = makeDrop(2, 300, 1300);
-        drop.life = 1e9; // 只为不让 15 s 超时干扰"长跑不漂移"这条性质
+        drop.life = 1e9; // 只为不让寿命计数干扰"长跑不漂移"这条性质
 
         const dropWorld = makeWorld({ magnetRadius: 0 });
         const enemyWorld: EnemyWorld = { playerX: 0, playerY: PLAYER_Y, scrollDelta: 0 };
@@ -247,12 +257,13 @@ describe('锁步：掉落物位移 === 敌人位移 === 背景块位移 === scro
             stepEnemy(enemy, DT, enemyWorld);
         }
 
-        expect(notAlive).toBe(0); // 整段都没被收走（配置确实"不会越线"）
+        expect(notAlive).toBe(0); // 整段都没消失 / 没被收走（配置确实"到不了出屏线"）
         expect(enemy.state).toBe(EnemyState.Falling); // 敌人也整段保持 Falling
         expect(travelled).toBeGreaterThan(H * 2); // 跨了 2 个以上背景周期（回绕真的发生了）
         expect(drop.y).toBeCloseTo(1300 - travelled, 6);
         expect(enemy.y).toBeCloseTo(1300 - travelled, 6);
         expect(drop.y).toBeCloseTo(enemy.y, 9); // 起点相同 → 终点也必须一位不差
+        expect(drop.y).toBeGreaterThan(dropDespawnY()); // 反证：确实还没到出屏线
     });
 
     it('位移与掉落物类型 / 价值无关（金币与超级水晶的位移一模一样）', () => {
@@ -339,17 +350,67 @@ describe('世界暂停：掉落物与敌人 / 背景一起停，恢复后不跳�
         expect(before - drop.y).toBeLessThan(1); // 绝不可能补上 3 秒的 60px
     });
 
-    it('世界暂停时**存活计时照走**（与 Telegraph 的 stateTime 同口径），磁吸也照常', () => {
-        const drop = makeDrop(33, 0, PLAYER_Y + 150); // 玩家正上方 150px（磁吸范围内、拾取范围外）
-        drop.life = 1.0;
-        const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, scrollDelta: 0 }); // 世界暂停
+    it('世界暂停时存活计时**冻结**，磁吸照常', () => {
+        // ① 冻结：暂停 180 帧（3 s）→ life **分毫未减**（旧口径"计时照走"下，这颗 life = DT 的掉落物早就没了）
+        const frozen = makeDrop(33, 300, 600); // 磁吸范围外（关磁吸）→ 本条只看计时
+        frozen.life = DT; // 只剩一帧
+        const frozenWorld = makeWorld({ magnetRadius: 0, scrollDelta: 0 }); // 世界暂停
+        const frozenLife0 = frozen.life;
+        for (let i = 0; i < 180; i++) {
+            expect(stepDrop(frozen, DT, frozenWorld)).toBe(DropOutcome.Alive);
+        }
+        expect(frozen.life).toBe(frozenLife0); // **精确相等**：3 秒一毫秒都没扣
+        expect(frozenLife0 - 180 * DT).toBeLessThan(0); // 反证：计时若照走，这 3 秒早把它扣成负数
 
+        // ② 磁吸照常：世界暂停时磁吸仍然生效（magnetized 置位 + 一路朝玩家飞），且寿命同样冻结
+        const magnet = makeDrop(34, 0, PLAYER_Y + 150); // 玩家正下方 150px（磁吸范围内、拾取范围外）
+        const magnetWorld = makeWorld({ magnetRadius: GameTuning.magnetRadius, scrollDelta: 0 }); // 世界暂停
+        const magnetLife0 = magnet.life;
+        const magnetY0 = magnet.y;
+        let magnetFrames = 0;
+        let magnetOutcome = DropOutcome.Alive;
+        while (magnetOutcome === DropOutcome.Alive && magnetFrames < 180) {
+            magnetOutcome = stepDrop(magnet, DT, magnetWorld);
+            expect(magnet.life).toBe(magnetLife0); // 暂停期间每一帧都不扣
+            magnetFrames++;
+        }
+        expect(magnet.magnetized).toBe(true); // 磁吸照常置位
+        expect(magnetY0 - magnet.y).toBeGreaterThan(0); // 且确实朝玩家飞了（暂停也照飞）
+        expect(magnetOutcome).toBe(DropOutcome.Collected); // 飞到玩家身上照常拾取（暂停不挡拾取）
+        expect(magnetFrames).toBeLessThan(180); // 磁吸速度远大于滚动 → 3 秒内早飞到了
+
+        // ③ 恢复后**不补扣**：暂停期间的量一帧都不补，恢复第一帧只扣一个 dt
+        const resumed = makeDrop(35, 300, 600);
+        resumed.life = 1.0;
+        const resumeWorld = makeWorld({ magnetRadius: 0, scrollDelta: 0 });
+        for (let i = 0; i < 180; i++) stepDrop(resumed, DT, resumeWorld);
+        expect(resumed.life).toBe(1.0); // 暂停 3 秒：一点没扣
+        resumeWorld.scrollDelta = DELTA; // 世界恢复滚动
+        expect(stepDrop(resumed, DT, resumeWorld)).toBe(DropOutcome.Alive);
+        expect(resumed.life).toBe(1.0 - DT); // 精确：只扣了恢复后的这一帧
+        expect(resumed.life).toBeGreaterThan(1.0 - 180 * DT); // 绝不补扣暂停期间累积的量
+    });
+
+    it('暂停时「**磁吸照常**」与「**寿命冻结**」**同时**成立（同一帧、逐帧断言满 180 帧）', () => {
+        // 把磁吸放慢到 1 px/s：掉落物在暂停的 3 秒里始终留在场上 → 两件事可以**同帧**逐帧断言
+        const drop = makeDrop(36, 0, PLAYER_Y + 150); // 磁吸范围内、拾取范围外
+        drop.life = DT; // 只剩一帧：寿命若照走，第 1 帧就扣成负数
+        const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, magnetSpeed: 1, scrollDelta: 0 });
         const life0 = drop.life;
-        const y0 = drop.y;
-        expect(stepDrop(drop, DT, world)).toBe(DropOutcome.Alive);
-        expect(drop.life).toBeCloseTo(life0 - DT, 9); // 计时照走
-        expect(drop.magnetized).toBe(true); // 磁吸照常生效
-        expect(y0 - drop.y).toBeGreaterThan(0); // 且确实朝玩家飞了
+        let travelled = 0;
+        let prevY = drop.y;
+
+        for (let i = 0; i < 180; i++) {
+            expect(stepDrop(drop, DT, world)).toBe(DropOutcome.Alive); // 既没消失、也没被结算
+            expect(drop.life).toBe(life0); // ← 寿命**冻结**（精确相等，不是"差不多"）
+            expect(drop.magnetized).toBe(true); // ← 磁吸**照常**置位
+            travelled += prevY - drop.y;
+            expect(drop.y).toBeLessThan(prevY); // ← 且**每帧**都在朝玩家推进（不是"停就一起停"）
+            prevY = drop.y;
+        }
+        expect(travelled).toBeCloseTo(180 * (1 / 60), 9); // 3 秒共飞 3 px（步长 = magnetSpeed × dt）
+        expect(drop.life).toBe(life0); // 跑满 180 帧依旧一毫秒未扣
+        expect(life0 - 180 * DT).toBeLessThan(0); // 反证：旧口径下这颗早就"超时"了
     });
 });
 
@@ -425,79 +486,111 @@ describe('磁吸：**叠加**在滚动位移之上（不覆盖、不替换）', 
     });
 });
 
-describe('越俯冲线自动收取（走**同一条**结算路径，掉落不丢）', () => {
-    it('未越线时**不**收取；越线的**那一帧**被收取', () => {
+describe('俯冲线不再是收取线（v1.10 修订：越线继续向下，直到出屏）', () => {
+    it('未越线时 Alive；越线的**那一帧**仍 Alive 且继续向下（不再被收取）', () => {
         const drop = makeDrop(51, 300, GameTuning.diveLineY + 10); // 线上方 10px
         const world = makeWorld({ magnetRadius: 0 });
         const delta = advanceWorldScroll(0, SPEED, DT, false, H).delta;
+        settleCalls = 0;
+
+        // 只擦一下：还在线上方 → Alive
         world.scrollDelta = delta;
-
-        // 只擦一下：还在线上方 → 必须 Alive（不能提前收）
         expect(stepDrop(drop, DT, world)).toBe(DropOutcome.Alive);
-        expect(hasDropCrossedDiveLine(drop)).toBe(false);
+        expect(drop.y).toBeGreaterThan(GameTuning.diveLineY);
 
-        // 一直滚到越线
-        let frames = 0;
-        let outcome = DropOutcome.Alive;
-        let aliveWhileCrossed = false;
-        while (outcome === DropOutcome.Alive && frames < 200) {
+        // 一直滚到越线：**每一帧**都 Alive（旧口径会在越线那一帧返回 Collected）
+        let frames = 1;
+        let crossedAt = -1;
+        let prevY = drop.y;
+        while (crossedAt < 0 && frames < 2000) {
             world.scrollDelta = delta;
-            outcome = stepDrop(drop, DT, world);
+            prevY = drop.y;
+            expect(stepDrop(drop, DT, world)).toBe(DropOutcome.Alive);
             frames++;
-            if (outcome === DropOutcome.Alive && hasDropCrossedDiveLine(drop)) aliveWhileCrossed = true;
+            expect(drop.y).toBeLessThan(prevY); // 逐帧继续向下（越线不改变运动）
+            if (drop.y <= GameTuning.diveLineY) crossedAt = frames;
         }
 
-        expect(aliveWhileCrossed).toBe(false); // 越线后**当帧**就收（不会漏收、不会拖到下一帧）
-        expect(outcome).toBe(DropOutcome.Collected);
+        expect(crossedAt).toBeGreaterThan(25); // 10px ÷ 0.333px/帧 ≈ 30 帧
+        expect(crossedAt).toBeLessThan(40);
+        expect(settleCalls).toBe(0); // 越线**不**走结算
         expect(drop.y).toBeLessThanOrEqual(GameTuning.diveLineY);
-        // 越线**前**一帧确实还在线上方（即"恰好在越线那一帧"收取）
-        expect(drop.y + world.scrollDelta).toBeGreaterThan(GameTuning.diveLineY);
-        // 10px ÷ 0.333px/帧 ≈ 30 帧（不断言精确帧数：浮点除法不保证整商）
-        expect(frames).toBeGreaterThan(25);
-        expect(frames).toBeLessThan(40);
+
+        // 越线后还**继续往下走**（正是"更晚消失"：玩家在更低处仍能捡到）
+        const yAtCross = drop.y;
+        for (let i = 0; i < 60; i++) {
+            world.scrollDelta = delta;
+            expect(stepDrop(drop, DT, world)).toBe(DropOutcome.Alive);
+        }
+        expect(drop.y).toBeLessThan(yAtCross - 19); // 又向下走了 ~20px（60 帧 × 0.333）
+        expect(settleCalls).toBe(0);
     });
 
-    it('越线判定用**中心**：恰好等于 diveLineY 算越线，差 1e-9 就不算', () => {
-        expect(hasDropCrossedDiveLine(makeDrop(52, 0, GameTuning.diveLineY))).toBe(true);
-        expect(hasDropCrossedDiveLine(makeDrop(53, 0, GameTuning.diveLineY + 1e-9))).toBe(false);
-        expect(hasDropCrossedDiveLine(makeDrop(54, 0, GameTuning.diveLineY - 1))).toBe(true);
+    it('越线口径仍以**中心**为准（y <= diveLineY 即已越线），但三种边界**都不结算**', () => {
+        const world = makeWorld({ magnetRadius: 0, playerX: 5000, scrollDelta: 0 });
+        settleCalls = 0;
+        const onLine = makeDrop(52, 0, GameTuning.diveLineY); // 恰好等于 → 已越线
+        const justAbove = makeDrop(53, 0, GameTuning.diveLineY + 1e-9); // 差 1e-9 → 还没越线
+        const below = makeDrop(54, 0, GameTuning.diveLineY - 1); // 已越线 1px
+
+        expect(onLine.y <= GameTuning.diveLineY).toBe(true);
+        expect(justAbove.y <= GameTuning.diveLineY).toBe(false);
+        expect(below.y <= GameTuning.diveLineY).toBe(true);
+
+        // 三颗都离出屏线很远 → 无论有没有越线，本帧都只能是 Alive
+        const outcomes = [onLine, justAbove, below].map(d => stepDrop(d, DT, world));
+        expect(outcomes).toEqual([DropOutcome.Alive, DropOutcome.Alive, DropOutcome.Alive]);
+        expect(outcomes).not.toContain(DropOutcome.Collected);
+        expect(settleCalls).toBe(0);
     });
 
-    it('玩家在**很远**处（磁吸关闭）也会被收取 —— 证明收取来自"越线"而不是"拾取"', () => {
+    it('玩家在**很远**处（磁吸关闭）越线也**不**结算 —— 越线不再产生任何收益', () => {
         const drop = makeDrop(55, 0, GameTuning.diveLineY + 1);
         const world = makeWorld({ magnetRadius: 0, playerX: 5000, playerY: PLAYER_Y });
         const delta = advanceWorldScroll(0, SPEED, DT, false, H).delta;
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
 
-        let outcome = DropOutcome.Alive;
-        for (let i = 0; i < 10 && outcome === DropOutcome.Alive; i++) {
-            world.scrollDelta = delta;
-            outcome = stepDrop(drop, DT, world);
-        }
-        expect(outcome).toBe(DropOutcome.Collected);
-        expect(hasDropCrossedDiveLine(drop)).toBe(true);
-        // 距离玩家仍极远 —— 绝不可能是"拾取"收的
-        expect(Math.abs(drop.x - world.playerX)).toBeGreaterThan(1000);
+        const result = runDropFrames([drop], stats, ledger, world, 60, delta);
+        expect(result.collected).toEqual([]); // 旧口径：这里本该收下 4 次…现在一次都没有
+        expect(result.fell).toEqual([]); // 60 帧 ≈ 20px，还没到出屏线
+        expect(drop.y).toBeLessThan(GameTuning.diveLineY); // 确实越线了
+        expect(settleCalls).toBe(0);
+        expect(ledger).toEqual(emptyLedger()); // 账本一分不动
+        expect(Math.abs(drop.x - world.playerX)).toBeGreaterThan(1000); // 距离玩家仍极远
     });
 
-    it('关掉开关（`dropAutoCollectAtDiveLine = false`）就会掉出屏幕丢掉 —— 这就是默认 true 的理由', () => {
-        const drop = makeDrop(56, 0, GameTuning.diveLineY + 1);
-        const world = makeWorld({ magnetRadius: 0, playerX: 5000, autoCollectAtDiveLine: false });
+    it('旧开关 `dropAutoCollectAtDiveLine` 已从真源**删除**（不存在任何"越线收取"）', () => {
+        expect('dropAutoCollectAtDiveLine' in GameTuning).toBe(false);
+        expect('dropAutoCollectOnTimeout' in GameTuning).toBe(false);
+        // 替代它的两条新口径（见 §24.8 / K-4）
+        expect(GameTuning.dropNeverMovesUp).toBe(true);
+        expect(GameTuning.dropDespawnBelowScreen).toBe(30);
+
+        // 越线之后还会继续往下走很远才消失（旧口径下这里早就被"收"走了）
+        const drop = makeDrop(56, 0, GameTuning.diveLineY - 1);
+        const world = makeWorld({ magnetRadius: 0, playerX: 5000 });
         const delta = advanceWorldScroll(0, SPEED, DT, false, H).delta;
-
-        let outcome = DropOutcome.Alive;
-        let frames = 0;
-        // 一直滚到"掉出屏幕底部"为止（约 483 帧 / 8 s，远早于 15 s 超时）
-        while (outcome === DropOutcome.Alive && !(drop.y < screenBounds().bottom) && frames < 2000) {
+        settleCalls = 0;
+        for (let i = 0; i < 300; i++) {
             world.scrollDelta = delta;
-            outcome = stepDrop(drop, DT, world);
-            frames++;
+            stepDrop(drop, DT, world);
         }
-        expect(drop.y).toBeLessThan(screenBounds().bottom); // 已经掉到屏幕底下
-        expect(outcome).toBe(DropOutcome.Alive); // 却**还没被收** → 掉落就这么没了
-        expect(drop.life).toBeGreaterThan(0); // 不是超时丢的，是"滚出屏幕"丢的
+        expect(drop.y).toBeLessThan(GameTuning.diveLineY - 90); // 又往下走了 ~100px
+        expect(settleCalls).toBe(0);
+
+        // 唯一的结局是 Fell（不结算）—— 一路走到出屏
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        const result = runDropFrames([drop], stats, ledger, world, 2000, delta);
+        expect(result.fell).toEqual([56]);
+        expect(result.collected).toEqual([]);
+        expect(settleCalls).toBe(0);
+        expect(ledger).toEqual(emptyLedger());
     });
 
-    it('同一帧内**多个**掉落物都被收取（一次循环处理完）', () => {
+    it('同一帧内**多个**越线掉落物：全部仍 Alive（一次循环处理完），账本为空', () => {
         const drops: Array<DropRuntime | null> = [
             makeDrop(61, 100, GameTuning.diveLineY - 13),
             makeDrop(62, 0, GameTuning.diveLineY - 100),
@@ -506,18 +599,20 @@ describe('越俯冲线自动收取（走**同一条**结算路径，掉落不丢
         const stats = createRunStats();
         const ledger = emptyLedger();
         const world = makeWorld({ magnetRadius: 0, playerX: 5000 });
+        settleCalls = 0;
 
         const result = runDropFrames(drops, stats, ledger, world, 1, DELTA);
-        expect(result.collected).toEqual([61, 62, 63]);
-        expect(result.expired).toEqual([]);
-        // 三颗经验水晶（各 6 点）**全部**进了账：6 → 6 → 12（升级 → 4）→ 10
-        // （exp 10 这个数只有在"三颗都结算了"时才成立 —— 顺手证明没有漏收）
-        expect(ledger.exp).toBeCloseTo(10, 9);
-        expect(ledger.level).toBe(2);
-        expect(ledger.levelUps).toBe(1);
+        expect(result.collected).toEqual([]);
+        expect(result.fell).toEqual([]);
+        expect(settleCalls).toBe(0);
+        expect(ledger.exp).toBe(0); // 三颗经验水晶（各 6 点）**一分都没进账**
+        expect(ledger.level).toBe(1);
+        expect(ledger.levelUps).toBe(0);
+        // 三颗都确实在俯冲线**下方**（不是"没越线所以 Alive"的假通过）
+        expect(drops.every(d => d !== null && d.y <= GameTuning.diveLineY)).toBe(true);
     });
 
-    it('自动收取与正常拾取**走同一条结算路径**：结果值相同、账本一字不差', () => {
+    it('对照：越线组与寿命组**一分收益都没有**，只有拾取组进账（逐项比对）', () => {
         const kinds: Array<[DropKind, number]> = [
             [DropKind.Exp, 6],
             [DropKind.Coin, 7],
@@ -525,69 +620,455 @@ describe('越俯冲线自动收取（走**同一条**结算路径，掉落不丢
             [DropKind.SuperCrystal, 2],
         ];
 
-        // A 组：正常拾取（掉落物就落在玩家脚下 → 第一帧进 pickupRadius）
+        // A 组：正常拾取（掉落物就落在玩家脚下 → 第一帧进 pickupRadius 才算数）
         const pickDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) => makeDrop(100 + i, 0, PLAYER_Y, kind, value));
         const pickStats = createRunStats();
         const pickLedger = emptyLedger();
+        settleCalls = 0;
         const pick = runDropFrames(pickDrops, pickStats, pickLedger, makeWorld({ magnetRadius: 0 }), 1, 0);
+        const pickSettle = settleCalls;
 
-        // B 组：越俯冲线自动收取（玩家在极远处、磁吸关闭 → **只可能**是越线规则收的）
-        const autoDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) =>
+        // B 组：越俯冲线（玩家极远 + 磁吸关闭 → 旧口径下"只可能是越线收的"）
+        const lineDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) =>
             makeDrop(200 + i, 0, GameTuning.diveLineY + 10, kind, value)
         );
-        const autoStats = createRunStats();
-        const autoLedger = emptyLedger();
-        const auto = runDropFrames(autoDrops, autoStats, autoLedger, makeWorld({ magnetRadius: 0, playerX: 5000 }), 40, DELTA);
+        const lineStats = createRunStats();
+        const lineLedger = emptyLedger();
+        settleCalls = 0;
+        const line = runDropFrames(lineDrops, lineStats, lineLedger, makeWorld({ magnetRadius: 0, playerX: 5000 }), 60, DELTA);
+        const lineSettle = settleCalls;
 
-        // ① 两边都被收了（B 组不是"没收上"的假通过）
+        // C 组：寿命耗尽（离出屏线还很远 → 只可能是"寿命"这条旧口径）
+        const lifeDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) => {
+            const d = makeDrop(300 + i, 0, GameTuning.diveLineY + 10, kind, value);
+            d.life = DT; // 只剩一帧 → 第一帧就耗尽
+            return d;
+        });
+        const lifeStats = createRunStats();
+        const lifeLedger = emptyLedger();
+        settleCalls = 0;
+        const life = runDropFrames(lifeDrops, lifeStats, lifeLedger, makeWorld({ magnetRadius: 0, playerX: 5000 }), 60, DELTA);
+        const lifeSettle = settleCalls;
+
+        // ① 只有 A 组结算，且恰好 4 次
         expect(pick.collected.length).toBe(4);
-        expect(auto.collected.length).toBe(4);
-        expect(auto.expired).toEqual([]);
-        // ② 触发方式不同的两条路径，返回的却是**同一个**结果值 → 视图层只可能有一条结算分支
-        const pickupOutcome = stepDrop(makeDrop(300, 0, PLAYER_Y), DT, makeWorld({ magnetRadius: 0, scrollDelta: 0 }));
-        const autoOutcome = stepDrop(
-            makeDrop(301, 300, GameTuning.diveLineY - 1),
-            DT,
-            makeWorld({ magnetRadius: 0, playerX: 5000, scrollDelta: 0 })
-        );
-        expect(pickupOutcome).toBe(DropOutcome.Collected); // 正常拾取
-        expect(autoOutcome).toBe(DropOutcome.Collected); // 越俯冲线自动收取
-        expect(pickupOutcome).toBe(autoOutcome); // 两者不可区分 → 结算路径必然是同一条
-        // ③ 账本完全一致：同样的钱、同样的魂晶、同样的超级水晶、同样的经验与等级
-        expect(autoLedger).toEqual(pickLedger);
-        expect(autoStats.level).toBe(pickStats.level);
-        expect(autoStats.exp).toBe(pickStats.exp);
-        expect(autoLedger.coins).toBe(7);
-        expect(autoLedger.souls).toBe(3);
-        expect(autoLedger.supers).toBe(2);
+        expect(pickSettle).toBe(4);
+        // ② B、C 两组**一次都没结算**（这就是本轮要求的核心：不许隔空结算）
+        expect(line.collected).toEqual([]);
+        expect(line.fell).toEqual([]);
+        expect(lineSettle).toBe(0);
+        expect(lineLedger).toEqual(emptyLedger());
+        expect(life.collected).toEqual([]);
+        expect(life.fell).toEqual([]);
+        expect(lifeSettle).toBe(0);
+        expect(lifeLedger).toEqual(emptyLedger());
+
+        // ③ A 组逐项可见（不是"两边都没结算"的假通过）：经验 6 / 金币 7 / 魂晶 3 / 超级水晶 2
+        expect(pickLedger.exp).toBe(6);
+        expect(pickLedger.coins).toBe(7);
+        expect(pickLedger.souls).toBe(3);
+        expect(pickLedger.supers).toBe(2);
+        expect(pickLedger).not.toEqual(emptyLedger());
+        expect(pickStats.exp).toBe(6);
     });
 });
 
-describe('超时：移除但**不结算**（§11.3 既有口径，未改动）', () => {
-    it('存活时间耗尽 → Expired（不是 Collected），且不产生任何收益', () => {
+describe('寿命（life）：**不参与生死**（耗尽既不结算、也不移除）', () => {
+    it('寿命耗尽 → 仍 Alive（既不是 Collected，也没有 Expired 这个结果值了）：settleCalls === 0、账本为 0', () => {
         const drop = makeDrop(71, 300, 600);
         drop.life = DT; // 只剩一帧
         const stats = createRunStats();
         const ledger = emptyLedger();
-        const world = makeWorld({ magnetRadius: 0 });
+        const world = makeWorld({ magnetRadius: 0, playerX: 5000 });
+        settleCalls = 0;
 
-        const result = runDropFrames([drop], stats, ledger, world, 2, DELTA);
-        expect(result.expired).toEqual([71]);
-        expect(result.collected).toEqual([]);
-        expect(ledger).toEqual(emptyLedger()); // 一分钱经验都没有
-        expect(ledger.levelUps).toBe(0);
+        const result = runDropFrames([drop], stats, ledger, world, 5, DELTA);
+        expect(result.collected).toEqual([]); // 不再"超时即收取"
+        expect(result.fell).toEqual([]); // 也不再"超时即移除"
+        expect(settleCalls).toBe(0); // 结算入口**一次都没被调用**
+        expect(ledger).toEqual(emptyLedger()); // 一颗 6 点经验水晶**没有**进账
+        expect(drop.life).toBeLessThan(0); // 寿命早就耗尽了 —— 却还活着
+        expect(drop.y).toBeCloseTo(600 - 5 * DELTA, 6); // 仍在场上、仍在向下
     });
 
-    it('超时**优先于**拾取（与既有实现一致：先扣 life、超时即移除）', () => {
-        const drop = makeDrop(72, 0, PLAYER_Y); // 已经贴在玩家身上
-        drop.life = DT; // 但这一帧恰好超时
-        expect(stepDrop(drop, DT, makeWorld({ magnetRadius: 0 }))).toBe(DropOutcome.Expired);
+    it('寿命耗尽**不**优先于拾取，也不再产生收益：贴在玩家身上照样 Collected，越线处寿命耗尽仍 Alive', () => {
+        const world = makeWorld({ magnetRadius: 0, scrollDelta: DELTA });
+
+        // ① 已经贴在玩家身上（本该拾取）+ 这一帧恰好耗尽寿命 → 仍然是"拾取"（唯一收益路径）
+        const onPlayer = makeDrop(72, 0, PLAYER_Y);
+        onPlayer.life = DT;
+        expect(stepDrop(onPlayer, DT, world)).toBe(DropOutcome.Collected);
+
+        // ② 已经越过俯冲线 + 这一帧恰好耗尽寿命 → Alive（旧口径在这里返回 Collected）
+        const onLine = makeDrop(73, 300, GameTuning.diveLineY - 50);
+        onLine.life = DT;
+        expect(onLine.y).toBeLessThanOrEqual(GameTuning.diveLineY);
+        expect(stepDrop(onLine, DT, world)).toBe(DropOutcome.Alive);
+
+        // ③ 证伪"寿命还会移除"：寿命已经负了，连跑 300 帧仍在场上（且位移仍只有滚动量）
+        const starved = makeDrop(74, 300, 600);
+        starved.life = -100; // 早就"超时"
+        let aliveFrames = 0;
+        for (let i = 0; i < 300; i++) {
+            if (stepDrop(starved, DT, world) === DropOutcome.Alive) aliveFrames++;
+        }
+        expect(aliveFrames).toBe(300);
+        expect(starved.y).toBeCloseTo(600 - 300 * DELTA, 6);
+        expect(starved.y).toBeGreaterThan(dropDespawnY()); // 还没到出屏线
     });
 
-    it('生存时长耗尽后即使越线也不结算（超时优先，保持既有边界）', () => {
-        const drop = makeDrop(73, 300, GameTuning.diveLineY - 50);
+    it('对照：拾取组逐项进账（经验 6 / 金币 7 / 魂晶 3 / 超级水晶 2），寿命耗尽组**逐项为 0**', () => {
+        const kinds: Array<[DropKind, number]> = [
+            [DropKind.Exp, 6],
+            [DropKind.Coin, 7],
+            [DropKind.Soul, 3],
+            [DropKind.SuperCrystal, 2],
+        ];
+
+        // A 组：正常拾取
+        const pickDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) => makeDrop(400 + i, 0, PLAYER_Y, kind, value));
+        const pickStats = createRunStats();
+        const pickLedger = emptyLedger();
+        settleCalls = 0;
+        const pick = runDropFrames(pickDrops, pickStats, pickLedger, makeWorld({ magnetRadius: 0 }), 1, 0);
+        const pickSettle = settleCalls;
+
+        // B 组：寿命耗尽（玩家极远 + 磁吸关闭 + 离出屏线很远 → **只可能**是"寿命"这条旧口径）
+        const timeoutDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) => {
+            const d = makeDrop(500 + i, 300, 600, kind, value);
+            d.life = DT; // 只剩一帧 → 第一帧就耗尽
+            return d;
+        });
+        const timeoutStats = createRunStats();
+        const timeoutLedger = emptyLedger();
+        settleCalls = 0;
+        const timeout = runDropFrames(timeoutDrops, timeoutStats, timeoutLedger, makeWorld({ magnetRadius: 0, playerX: 5000 }), 2, DELTA);
+        const timeoutSettle = settleCalls;
+
+        // ① A 组结算 4 次；B 组**一次都没有**
+        expect(pick.collected.length).toBe(4);
+        expect(pickSettle).toBe(4);
+        expect(timeout.collected).toEqual([]);
+        expect(timeout.fell).toEqual([]);
+        expect(timeoutSettle).toBe(0);
+
+        // ② 逐项比对：B 组四项**全是 0**（旧的"两边账本一字不差"结论已作废）
+        expect(timeoutLedger.exp).toBe(0);
+        expect(timeoutLedger.coins).toBe(0);
+        expect(timeoutLedger.souls).toBe(0);
+        expect(timeoutLedger.supers).toBe(0);
+        expect(timeoutLedger.level).toBe(1);
+        expect(timeoutLedger.levelUps).toBe(0);
+        expect(timeoutLedger).toEqual(emptyLedger());
+        expect(timeoutStats.exp).toBe(0);
+        expect(timeoutStats.level).toBe(1);
+        expect(timeoutLedger).not.toEqual(pickLedger); // 收益**不同**（只可能来自拾取）
+
+        // ③ 数字非 0（不是"两边都没结算"的假通过）
+        expect(pickLedger.exp).toBe(6);
+        expect(pickLedger.coins).toBe(7);
+        expect(pickLedger.souls).toBe(3);
+        expect(pickLedger.supers).toBe(2);
+    });
+
+    it('旧开关 `dropAutoCollectOnTimeout` 已从真源**删除**：寿命为负跑满 180 帧仍 Alive、不结算', () => {
+        expect('dropAutoCollectOnTimeout' in GameTuning).toBe(false); // 连"打开隔空结算"的开关都不存在了
+        expect(GameTuning.dropLifeTime).toBe(15); // 数值未动（只是不再决定生死）
+
+        const drop = makeDrop(76, 300, 600);
         drop.life = DT;
-        expect(stepDrop(drop, DT, makeWorld({ magnetRadius: 0 }))).toBe(DropOutcome.Expired);
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
+
+        const result = runDropFrames([drop], stats, ledger, makeWorld({ magnetRadius: 0, playerX: 5000 }), 180, DELTA);
+        expect(result.collected).toEqual([]);
+        expect(result.fell).toEqual([]);
+        expect(settleCalls).toBe(0);
+        expect(ledger).toEqual(emptyLedger());
+        expect(drop.life).toBeLessThan(0); // 寿命早就耗尽
+        expect(drop.y).toBeCloseTo(600 - 180 * DELTA, 6); // 仍在场上、仍在向下
+    });
+});
+
+describe('绝不向上移动：单调不上升夹取（玩家在掉落物上方时磁吸只能横向靠拢）', () => {
+    it('玩家在掉落物**正上方** + 世界暂停：逐帧 y **分毫不动**、x 每帧朝玩家靠拢', () => {
+        const playerY = 760; // 玩家在掉落物**上方**
+        const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, playerX: 0, playerY, scrollDelta: 0 });
+        const drop = makeDrop(81, 100, 600); // 与玩家距离 ≈ 172 ≤ 192 → 一进来就吸附
+        const y0 = drop.y;
+        let prevX = drop.x;
+
+        for (let i = 0; i < 120; i++) {
+            expect(stepDrop(drop, DT, world)).toBe(DropOutcome.Alive);
+            expect(drop.y).toBe(y0); // ① **绝不上升**：向上的分量被整条夹掉（连"不动"都是精确相等）
+            expect(drop.x).toBeLessThan(prevX); // ② 横向**照常**被吸（每帧都在靠拢）
+            prevX = drop.x;
+        }
+        expect(drop.magnetized).toBe(true);
+        expect(drop.x).toBeLessThan(50); // 确实飞了很远（不是"磁吸没生效"的假通过）
+
+        // ③ 证伪：关掉夹取 → **同一场景确实会上升**（证明这条用例真的在测夹取，而不是别的机制）
+        const original = GameTuning.dropNeverMovesUp;
+        try {
+            GameTuning.dropNeverMovesUp = false;
+            const free = makeDrop(82, 100, 600);
+            stepDrop(free, DT, world);
+            expect(free.y).toBeGreaterThan(y0); // 被磁吸抬起来了
+            expect(free.x).toBeLessThan(100); // 横向照样被吸
+        } finally {
+            GameTuning.dropNeverMovesUp = original; // 必须还原，否则污染后续用例
+        }
+        expect(GameTuning.dropNeverMovesUp).toBe(true); // 已还原
+    });
+
+    it('世界滚动 + 玩家在上方：y **单调不增**，且净位移**绝不大于**滚动量（上抬分量被夹掉、也不额外加速）', () => {
+        const playerY = 760; // 玩家在掉落物**上方**（磁吸一直想把掉落物往上拽）
+        const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, playerX: 0, playerY });
+        const drop = makeDrop(83, 100, 600);
+        const control = makeDrop(86, 100, 600); // 对照组：同一位置但**关掉磁吸**
+        const controlWorld = makeWorld({ magnetRadius: 0, playerX: 0, playerY });
+        const y0 = drop.y;
+        let prevY = drop.y;
+
+        for (let i = 0; i < 200; i++) {
+            world.scrollDelta = DELTA;
+            controlWorld.scrollDelta = DELTA;
+            const outcome = stepDrop(drop, DT, world);
+            stepDrop(control, DT, controlWorld);
+            expect(drop.y).toBeLessThanOrEqual(prevY); // ① 逐帧单调不增（**本轮最关键的一条**）
+            // ② 净向下位移 ∈ [0, 滚动量]：磁吸的上抬**既不产生高度**，也不会额外加速
+            expect(prevY - drop.y).toBeGreaterThanOrEqual(0);
+            expect(prevY - drop.y).toBeLessThanOrEqual(DELTA + 1e-9);
+            prevY = drop.y;
+            expect([DropOutcome.Alive, DropOutcome.Fell]).toContain(outcome); // 既不结算也不消失
+        }
+
+        // ③ 对照：关掉磁吸的那颗严格按滚动量下移满 200 帧；开着磁吸的这颗**一帧都没能下去**
+        //    （磁吸的上抬 > 滚动量 → 被夹在 y0：它比对照组**高**，但**从未高于起点**）
+        expect(control.y).toBeCloseTo(600 - 200 * DELTA, 6);
+        expect(drop.y).toBeCloseTo(y0, 9);
+        expect(drop.y).toBeGreaterThan(control.y);
+        expect(drop.y).toBeLessThanOrEqual(y0); // 再强调一次：一帧都没上升过
+        expect(drop.magnetized).toBe(true);
+        expect(drop.x).toBeLessThan(50); // 横向仍一路被吸到玩家那一列
+    });
+
+    it('玩家在掉落物**下方**（正常的向下磁吸）**不受夹取影响**：位移仍 = 滚动 + 磁吸', () => {
+        const MAGNET = GameTuning.magnetRadius;
+        const d0 = 150; // 玩家在掉落物**正下方** 150px
+        const magnetStep = GameTuning.magnetSpeed * DT;
+
+        // ① 只有磁吸（世界暂停）：位移仍是完整的 magnetStep（夹取没有削弱"向下"的磁吸）
+        const a = makeDrop(84, 0, PLAYER_Y + d0);
+        stepDrop(a, DT, makeWorld({ magnetRadius: MAGNET, scrollDelta: 0 }));
+        expect(a.y - (PLAYER_Y + d0)).toBeCloseTo(-magnetStep, 9);
+        expect(Math.abs(a.y - (PLAYER_Y + d0))).toBeGreaterThan(1); // 非 0（反证：夹取不是"限制所有磁吸"）
+
+        // ② 滚动 + 磁吸：与"叠加"口径完全一致（夹取对向下的位移是恒等变换）
+        const c = makeDrop(85, 0, PLAYER_Y + d0);
+        stepDrop(c, DT, makeWorld({ magnetRadius: MAGNET, scrollDelta: DELTA }));
+        expect(c.y - (PLAYER_Y + d0)).toBeCloseTo(-(DELTA + magnetStep), 9);
+        expect(c.y).toBeLessThan(a.y); // 比"只有磁吸"还低了一个滚动量
+    });
+});
+
+describe('出屏消失：越过屏幕底边再往下 30 px 才移除，且**绝不结算**', () => {
+    it('阈值 = 屏幕底边 − `dropDespawnBelowScreen`（独立复算）；屏幕底与 −30 之间**仍 Alive**（更晚消失）', () => {
+        // 公式独立复算一遍（不只看 dropDespawnY() 自己）
+        expect(dropDespawnY()).toBeCloseTo(BOTTOM - GameTuning.dropDespawnBelowScreen, 9);
+        expect(GameTuning.dropDespawnBelowScreen).toBe(30); // 正值 = 越过屏幕底**再往下** 30px 才消失
+        expect(BOTTOM - dropDespawnY()).toBeCloseTo(30, 9);
+        expect(dropDespawnY()).toBeLessThan(BOTTOM);
+
+        // 起点：正好在**屏幕底边**（刚出屏，离阈值还差 30px）
+        const drop = makeDrop(91, 0, BOTTOM);
+        const world = makeWorld({ magnetRadius: 0, playerX: 5000 });
+        const delta = advanceWorldScroll(0, SPEED, DT, false, H).delta;
+        let fellAt = -1;
+        let belowScreenAlive = 0;
+
+        for (let i = 0; i < 200 && fellAt < 0; i++) {
+            world.scrollDelta = delta;
+            const outcome = stepDrop(drop, DT, world);
+            if (outcome === DropOutcome.Fell) fellAt = i;
+            else if (drop.y < BOTTOM) belowScreenAlive++; // 已在屏幕外却**还没**消失
+        }
+
+        // 30px ÷ 0.333px/帧 ≈ 90 帧才消失（旧口径"越俯冲线就收"早在 ~150px 之前就收走了）
+        expect(fellAt).toBeGreaterThan(80);
+        expect(fellAt).toBeLessThan(100);
+        expect(belowScreenAlive).toBeGreaterThan(80); // "掉出屏幕仍活着"真的发生了 = 更晚消失
+        expect(belowScreenAlive).toBeGreaterThanOrEqual(fellAt - 2);
+        expect(drop.y).toBeLessThanOrEqual(dropDespawnY()); // 最终确实越过了阈值
+    });
+
+    it('恰好在越线那一帧 → Fell；差 1px 不消失（边界）', () => {
+        const y = dropDespawnY();
+        const still = (id: number, dy: number) =>
+            stepDrop(makeDrop(id, 300, y + dy), DT, makeWorld({ magnetRadius: 0, playerX: 5000, scrollDelta: 0 }));
+
+        expect(still(92, 0)).toBe(DropOutcome.Fell); // 恰好贴线 → 消失
+        expect(still(93, 1)).toBe(DropOutcome.Alive); // 高 1px → 不消失
+        expect(still(94, -1)).toBe(DropOutcome.Fell); // 低 1px → 消失
+
+        // 滚动把它推过线的**那一帧**（进入时还在线上方）→ 同样当帧 Fell（不吃上一帧的滞后）
+        const over = makeDrop(95, 300, y + 0.1);
+        expect(stepDrop(over, DT, makeWorld({ magnetRadius: 0, playerX: 5000, scrollDelta: DELTA }))).toBe(DropOutcome.Fell);
+        // 反证：再高一点点（+1px）这一帧就过不去
+        const notYet = makeDrop(96, 300, y + 1);
+        expect(stepDrop(notYet, DT, makeWorld({ magnetRadius: 0, playerX: 5000, scrollDelta: DELTA }))).toBe(DropOutcome.Alive);
+    });
+
+    it('消失**绝不结算**：账本为空、settleCalls === 0、`collected` 为空、`fell` 命中', () => {
+        const drops: Array<DropRuntime | null> = [
+            makeDrop(101, 100, dropDespawnY() - 5, DropKind.Exp, 6),
+            makeDrop(102, 0, dropDespawnY() - 5, DropKind.Coin, 7),
+            makeDrop(103, -100, dropDespawnY() - 5, DropKind.Soul, 3),
+            makeDrop(104, 200, BOTTOM + 1, DropKind.SuperCrystal, 2), // 已出屏但**没到**阈值 → 不消失
+        ];
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
+
+        const result = runDropFrames(drops, stats, ledger, makeWorld({ magnetRadius: 0, playerX: 5000 }), 1, 0);
+        expect(result.fell).toEqual([101, 102, 103]); // 三颗过线：只移除
+        expect(result.collected).toEqual([]); // 一颗都没结算
+        expect(settleCalls).toBe(0); // 结算入口一次都没被调用
+        expect(ledger).toEqual(emptyLedger()); // 经验 / 金币 / 魂晶 / 超级水晶**一分都没有**
+        expect(drops[3]).not.toBeNull(); // 第 4 颗还在场上（"屏幕底 +1px 不算消失"）
+        // `Fell` 与 `Collected` 是**两个不同的结果值** → 视图层不可能把"消失"当成"拾取"
+        expect(DropOutcome.Fell).not.toBe(DropOutcome.Collected);
+        expect(DropOutcome.Fell as string).toBe('fell');
+    });
+
+    it('同一帧内**多个**掉落物一起出屏：全部 Fell（一次循环处理完），账本仍为空', () => {
+        const y = dropDespawnY();
+        const drops: Array<DropRuntime | null> = [makeDrop(111, 100, y), makeDrop(112, 0, y - 100), makeDrop(113, -100, y - 1)];
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
+
+        const result = runDropFrames(drops, stats, ledger, makeWorld({ magnetRadius: 0, playerX: 5000 }), 1, DELTA);
+        expect(result.fell).toEqual([111, 112, 113]);
+        expect(result.collected).toEqual([]);
+        expect(settleCalls).toBe(0);
+        expect(ledger).toEqual(emptyLedger());
+        expect(drops.every(d => d === null)).toBe(true); // 全部从场上移除（节点也随之销毁）
+    });
+
+    it('`dropDespawnBelowScreen` 真的在起作用：= 0 时贴屏幕底就消失（更早）、调大时更晚', () => {
+        const original = GameTuning.dropDespawnBelowScreen;
+        const at = (id: number, y: number) =>
+            stepDrop(makeDrop(id, 300, y), DT, makeWorld({ magnetRadius: 0, playerX: 5000, scrollDelta: 0 }));
+        try {
+            GameTuning.dropDespawnBelowScreen = 0; // 贴屏幕底即消失
+            expect(dropDespawnY()).toBeCloseTo(BOTTOM, 9);
+            expect(at(121, BOTTOM)).toBe(DropOutcome.Fell);
+            expect(at(122, BOTTOM + 1)).toBe(DropOutcome.Alive);
+
+            GameTuning.dropDespawnBelowScreen = 200; // 更晚消失
+            expect(dropDespawnY()).toBeCloseTo(BOTTOM - 200, 9);
+            expect(at(123, BOTTOM - 100)).toBe(DropOutcome.Alive); // 在默认 30 下会消失的位置，现在仍活着
+            expect(at(124, BOTTOM - 200)).toBe(DropOutcome.Fell);
+        } finally {
+            GameTuning.dropDespawnBelowScreen = original; // 必须还原，否则污染后续用例
+        }
+        expect(GameTuning.dropDespawnBelowScreen).toBe(30); // 已还原
+    });
+});
+
+describe('只有进入吸收范围才结算（全生命周期 settleCalls === 0 的极端场景）', () => {
+    it('玩家极远 + 磁吸关闭：从出生线一路滚到出屏消失 —— 全程 settleCalls === 0、账本为空、最终 Fell', () => {
+        const drop = makeDrop(131, 300, GameTuning.spawnLineY - CELL); // 出生线处（屏幕上方）
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        const world = makeWorld({ magnetRadius: 0, playerX: 5000 });
+        const delta = advanceWorldScroll(0, SPEED, DT, false, H).delta;
+        settleCalls = 0;
+
+        // 539 → −697：约 1236px ÷ 0.333 ≈ 3708 帧（给到 5000 帧）
+        const result = runDropFrames([drop], stats, ledger, world, 5000, delta);
+        expect(result.collected).toEqual([]); // 一趟下来**一次都没结算**
+        expect(result.fell).toEqual([131]); // 唯一的结局：出屏消失
+        expect(settleCalls).toBe(0); // 全程结算入口调用次数 = 0
+        expect(ledger).toEqual(emptyLedger()); // 账本为空（经验 / 金币 / 魂晶 / 超级水晶全 0）
+        expect(drop.life).toBeLessThan(0); // 路上寿命早就耗尽了 —— 也没能"隔空结算"
+        expect(drop.y).toBeLessThanOrEqual(dropDespawnY());
+    });
+
+    it('同一颗掉落物：进吸收范围 → 结算；出屏 → 不结算（`Collected` / `Fell` 严格区分）', () => {
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
+
+        // ① 进吸收范围：玩家就在原点，一颗金币正好落在原点 → Collected → 进账
+        const picked = runDropFrames(
+            [makeDrop(141, 0, 0, DropKind.Coin, 7)],
+            stats,
+            ledger,
+            makeWorld({ magnetRadius: 0, playerX: 0, playerY: 0, scrollDelta: 0 }),
+            1,
+            0
+        );
+        expect(picked.collected).toEqual([141]);
+        expect(picked.fell).toEqual([]);
+        expect(settleCalls).toBe(1);
+        expect(ledger.coins).toBe(7);
+
+        // ② 出屏：同样一颗金币（同 kind / 同 value），只是位置在阈值下方 → Fell → **一分不进账**
+        const fell = runDropFrames(
+            [makeDrop(142, 0, dropDespawnY(), DropKind.Coin, 7)],
+            stats,
+            ledger,
+            makeWorld({ magnetRadius: 0, playerX: 0, playerY: 0, scrollDelta: 0 }),
+            1,
+            0
+        );
+        expect(fell.fell).toEqual([142]);
+        expect(fell.collected).toEqual([]);
+        expect(settleCalls).toBe(1); // 仍然只有 ① 那一次结算
+        expect(ledger.coins).toBe(7); // 金币数**没有**变成 14
+    });
+
+    it('磁吸只是"把掉落物送进吸收范围"的手段：磁吸收进来的收益与"直接放在玩家身上"**一字不差**', () => {
+        const kinds: Array<[DropKind, number]> = [
+            [DropKind.Exp, 6],
+            [DropKind.Coin, 7],
+            [DropKind.Soul, 3],
+            [DropKind.SuperCrystal, 2],
+        ];
+
+        // A 组：直接放在玩家脚下（第一帧就进 pickupRadius）
+        const nearDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) => makeDrop(400 + i, 0, PLAYER_Y, kind, value));
+        const nearStats = createRunStats();
+        const nearLedger = emptyLedger();
+        settleCalls = 0;
+        const near = runDropFrames(nearDrops, nearStats, nearLedger, makeWorld({ magnetRadius: 0 }), 1, 0);
+        const nearSettle = settleCalls;
+
+        // B 组：放在磁吸范围边缘（180 ≤ 192），靠磁吸一路飞进来才结算
+        const farDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) => makeDrop(500 + i, 0, PLAYER_Y + 180, kind, value));
+        const farStats = createRunStats();
+        const farLedger = emptyLedger();
+        settleCalls = 0;
+        const far = runDropFrames(farDrops, farStats, farLedger, makeWorld({ magnetRadius: GameTuning.magnetRadius }), 300, DELTA);
+        const farSettle = settleCalls;
+
+        expect(near.collected.length).toBe(4);
+        expect(far.collected.length).toBe(4); // 磁吸确实把它们都送进了吸收范围
+        expect(nearSettle).toBe(4);
+        expect(farSettle).toBe(4); // 结算次数一样（磁吸不是"另一种结算"）
+        expect(near.fell).toEqual([]);
+        expect(far.fell).toEqual([]);
+        // 账本**一字不差**：磁吸只是搬运工，收益口径与"直接走进去"完全相同
+        expect(farLedger).toEqual(nearLedger);
+        expect(farStats.exp).toBe(nearStats.exp);
+        expect(farStats.level).toBe(nearStats.level);
+        expect(nearLedger.exp).toBe(6);
+        expect(nearLedger.coins).toBe(7);
+        expect(nearLedger.souls).toBe(3);
+        expect(nearLedger.supers).toBe(2);
     });
 });
 
@@ -616,22 +1097,36 @@ describe('编译期契约：两个仿真世界共用同一个必填的 scrollDel
         expect(enemyY0 - enemy.y).toBeCloseTo(dropY0 - drop.y, 12); // 一位不差
     });
 
-    it('掉落实真源：自动收取开关默认**开**（关掉就会掉出屏幕丢掉落）', () => {
-        expect(GameTuning.dropAutoCollectAtDiveLine).toBe(true);
-        expect(typeof GameTuning.dropAutoCollectAtDiveLine).toBe('boolean');
-        // 俯冲线在屏幕底边**之上**（所以"越线即收"一定发生在掉出屏幕之前）
-        expect(GameTuning.diveLineY).toBeGreaterThan(screenBounds().bottom);
-        // 玩家出生点在俯冲线之上（掉落物滚到玩家高度时仍未被收，可以正常磁吸/拾取）
+    it('掉落实源：`dropNeverMovesUp` = true、`dropDespawnBelowScreen` = 30，两个"自动收取"开关**已删除**', () => {
+        expect(GameTuning.dropNeverMovesUp).toBe(true);
+        expect(typeof GameTuning.dropNeverMovesUp).toBe('boolean');
+        expect(GameTuning.dropDespawnBelowScreen).toBe(30);
+        expect(typeof GameTuning.dropDespawnBelowScreen).toBe('number');
+        expect('dropAutoCollectAtDiveLine' in GameTuning).toBe(false);
+        expect('dropAutoCollectOnTimeout' in GameTuning).toBe(false);
+
+        // 几何关系（决定了"能在更低处捡到"）：出屏线在俯冲线**之下** → 掉落物会**穿过**俯冲线继续往下
+        expect(GameTuning.diveLineY).toBeGreaterThan(dropDespawnY());
+        expect(GameTuning.diveLineY - dropDespawnY()).toBeCloseTo(190, 6); // -507 vs -697
+        // 俯冲线在屏幕底边**之上**（越过它之后还有 190px 才消失）
+        expect(GameTuning.diveLineY).toBeGreaterThan(BOTTOM);
+        // 玩家出生点在俯冲线之上（掉落物滚到玩家高度时既没收也没消失，可以正常磁吸 / 拾取）
         expect(PLAYER_Y).toBeGreaterThan(GameTuning.diveLineY);
     });
 
-    it('非法 dt 按 0 处理：不计时、不磁吸，但**世界滚动位移照旧**（位移已含 dt，与敌人同口径）', () => {
-        const onPlayer = makeDrop(91, 0, PLAYER_Y);
+    it('非法 dt 按 0 处理：不计时、不磁吸，但**世界滚动位移照旧**；越线处**不再**返回 Collected', () => {
+        const onPlayer = makeDrop(151, 0, PLAYER_Y);
         expect(stepDrop(onPlayer, NaN, makeWorld({ magnetRadius: 0, scrollDelta: DELTA }))).toBe(DropOutcome.Collected);
-        const onLine = makeDrop(92, 300, GameTuning.diveLineY - 1);
-        expect(stepDrop(onLine, -1, makeWorld({ magnetRadius: 0, scrollDelta: DELTA }))).toBe(DropOutcome.Collected);
 
-        const far = makeDrop(93, 300, 600);
+        // 越线处：**不再**结算（旧口径在这里返回 Collected）
+        const onLine = makeDrop(152, 300, GameTuning.diveLineY - 1);
+        expect(stepDrop(onLine, -1, makeWorld({ magnetRadius: 0, scrollDelta: DELTA }))).toBe(DropOutcome.Alive);
+
+        // 出屏线照常判：dt 非法也要在**同一帧**消失
+        const belowLine = makeDrop(153, 300, dropDespawnY() + 0.1);
+        expect(stepDrop(belowLine, NaN, makeWorld({ magnetRadius: 0, scrollDelta: DELTA }))).toBe(DropOutcome.Fell);
+
+        const far = makeDrop(154, 300, 600);
         far.life = 5;
         far.magnetized = true;
         const world = makeWorld({ magnetRadius: 0, scrollDelta: DELTA, playerX: 300, playerY: PLAYER_Y });
@@ -639,5 +1134,185 @@ describe('编译期契约：两个仿真世界共用同一个必填的 scrollDel
         expect(far.life).toBe(5); // 不计时
         expect(far.x).toBe(300); // 不磁吸（磁吸步长 = magnetSpeed × 0 = 0）
         expect(far.y).toBeCloseTo(600 - DELTA, 9); // 但世界滚动位移照旧
+    });
+});
+
+describe('已结算闸门（v1.10 加固）：吸收过的掉落物**永不再产生收益** —— 即使调用方忘了把它移出场', () => {
+    /**
+     * 复现"**忘了把掉落物移出场**"的 view 层 bug：与上面的 `runDropFrames()` 是**同一套结算口径**
+     * （`Collected` → `collectLikeView()` 是唯一入口），唯一区别是 —— `Collected` / `Fell` 之后
+     * **都不**把 `drops[i]` 置 null：同一个对象留在场上，之后每帧继续被 `stepDrop()` 推进。
+     * 这正是线上那个 bug 的形态（`BattleView.updateDrops()` 吸收后漏了 `removed.push(drop.id)`
+     * → 掉落物留在 `m_Drops` 里 → 每帧重复结算 → 经验一直涨）。
+     */
+    function runDropFramesKeepingDrop(
+        drops: DropRuntime[],
+        stats: RunStats,
+        ledger: Ledger,
+        world: DropWorld,
+        frames: number,
+        deltaPerFrame: number
+    ): { collected: number[]; fell: number[]; outcomes: DropOutcome[] } {
+        const collected: number[] = [];
+        const fell: number[] = [];
+        const outcomes: DropOutcome[] = [];
+        for (let f = 0; f < frames; f++) {
+            world.scrollDelta = deltaPerFrame;
+            for (const drop of drops) {
+                const outcome = stepDrop(drop, DT, world);
+                outcomes.push(outcome);
+                if (outcome === DropOutcome.Collected) {
+                    collectLikeView(stats, ledger, drop); // ← 唯一结算入口（**故意不**移出场）
+                    collected.push(drop.id);
+                    continue;
+                }
+                if (outcome === DropOutcome.Fell) {
+                    fell.push(drop.id); // 只记一笔：**不移出场**、**一分收益都不加**
+                }
+            }
+        }
+        return { collected, fell, outcomes };
+    }
+
+    it('同一个掉落物连续 5 帧都在吸收范围内：第 1 帧 Collected、之后每帧都 Alive；结算计数 === 1、账本只加一次', () => {
+        const drop = makeDrop(601, 0, PLAYER_Y, DropKind.Coin, 7); // 与玩家**完全重合** → 第 1 帧必进 pickupRadius
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
+
+        // 5 帧**世界照滚**（DELTA ≈ 0.33px/帧，5 帧才挪 1.7px，远在 pickupRadius(38) 里）→ 旧代码每帧都会结算
+        const run = runDropFramesKeepingDrop([drop], stats, ledger, makeWorld({ magnetRadius: 0 }), 5, DELTA);
+
+        expect(run.outcomes).toEqual([
+            DropOutcome.Collected,
+            DropOutcome.Alive,
+            DropOutcome.Alive,
+            DropOutcome.Alive,
+            DropOutcome.Alive,
+        ]);
+        expect(run.collected).toEqual([601]); // 5 帧里**只有**第 1 帧结算
+        expect(run.fell).toEqual([]);
+        expect(settleCalls).toBe(1); // ← 结算入口**只被调用 1 次**（不是 5 次）
+        expect(drop.collected).toBe(true); // 闸门已置位
+
+        // 账本只加一次：金币 7（**不是** 35），其余三项与升级计数**全是 0**
+        expect(ledger.coins).toBe(7);
+        expect(ledger.exp).toBe(0);
+        expect(ledger.souls).toBe(0);
+        expect(ledger.supers).toBe(0);
+        expect(ledger.levelUps).toBe(0);
+        expect(ledger.level).toBe(1);
+
+        // 已结算的掉落物是"惰性"的：停在置位那一帧的位置，寿命也不再扣（世界还在滚也不动）
+        expect(drop.y).toBeCloseTo(PLAYER_Y - DELTA, 9);
+        expect(drop.life).toBeCloseTo(GameTuning.dropLifeTime - DT, 9);
+    });
+
+    it('四类掉落物各一颗、连续 5 帧都在范围内：**每颗恰好结算 1 次**（共 4 次），账本逐项**不翻倍**', () => {
+        const drops: DropRuntime[] = [
+            makeDrop(611, 0, PLAYER_Y, DropKind.Exp, 6),
+            makeDrop(612, 0, PLAYER_Y, DropKind.Coin, 7),
+            makeDrop(613, 0, PLAYER_Y, DropKind.Soul, 3),
+            makeDrop(614, 0, PLAYER_Y, DropKind.SuperCrystal, 2),
+        ];
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
+
+        const run = runDropFramesKeepingDrop(drops, stats, ledger, makeWorld({ magnetRadius: 0 }), 5, 0);
+
+        expect(run.collected).toEqual([611, 612, 613, 614]); // 4 颗都只结算了 1 次（不是 20 次）
+        expect(settleCalls).toBe(4);
+        expect(run.outcomes.filter(o => o === DropOutcome.Collected).length).toBe(4);
+        expect(run.outcomes.filter(o => o === DropOutcome.Alive).length).toBe(16); // 4 颗 × 后 4 帧
+        expect(run.fell).toEqual([]);
+        drops.forEach(d => expect(d.collected).toBe(true));
+
+        // 账本**逐项**：经验 / 金币 / 魂晶 / 超级水晶各加一次；6 点经验不够 1→2 级，也没升级
+        expect(ledger.exp).toBe(6);
+        expect(ledger.coins).toBe(7);
+        expect(ledger.souls).toBe(3);
+        expect(ledger.supers).toBe(2);
+        expect(ledger.levelUps).toBe(0);
+        expect(ledger.level).toBe(1);
+        expect(stats.exp).toBe(6); // RunStats 也只进账一次
+        expect(stats.level).toBe(1);
+    });
+
+    it('模拟"忘记移除"：故意不移出场、连跑 300 帧（期间它越过俯冲线与屏幕底 −30）——结算次数仍 === 1、账本不变', () => {
+        // 起始：玩家与掉落物都在出生点 → 第 1 帧必被吸收
+        const drop = makeDrop(621, 0, PLAYER_Y, DropKind.Coin, 7);
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        const world = makeWorld({ magnetRadius: 0, scrollDelta: 0 });
+        settleCalls = 0;
+
+        // ① 第 1 帧：进吸收范围 → Collected → 走唯一结算入口（随后**故意不把它移出场**）
+        expect(stepDrop(drop, DT, world)).toBe(DropOutcome.Collected);
+        collectLikeView(stats, ledger, drop);
+        const settledLedger = { ...ledger };
+        expect(settleCalls).toBe(1);
+        expect(settledLedger.coins).toBe(7);
+
+        // ② 再连跑 300 帧"世界照滚 + 忘了移除"：每帧都调一次 stepDrop，节点始终留在场上。
+        //    ⚠️ 闸门在位移**之前**就返回 → 已结算的掉落物自己滚不动了；所以这里照"一个仍在按
+        //    背景滚动摆放这个陈旧节点的 view"**手动**把它每帧往下摆 1px（300 帧 = 300px，足够从
+        //    出生点越过俯冲线 -507 与出屏线 -697；真实滚动 ≈0.33px/帧 要 660+ 帧）—— 这正是要压的场景。
+        const run: DropOutcome[] = [];
+        let framesBelowDespawn = 0;
+        for (let f = 0; f < 300; f++) {
+            world.scrollDelta = DELTA;
+            run.push(stepDrop(drop, DT, world)); // ← 已结算 → 只会是 Alive
+            drop.y -= 1; // 视图层仍在滚动这个"已被遗忘"的节点
+            if (drop.y <= dropDespawnY()) framesBelowDespawn++;
+        }
+
+        expect(run.every(o => o === DropOutcome.Alive)).toBe(true); // 300 帧里**没有**第二个 Collected
+        expect(run.includes(DropOutcome.Collected)).toBe(false);
+        expect(run.includes(DropOutcome.Fell)).toBe(false);
+        expect(settleCalls).toBe(1); // ← 这条就是原来那个线上 bug：漏了移除也**只结算一次**
+        expect(ledger).toEqual(settledLedger); // 账本一分没变（金币仍是 7，不是 7 × 301）
+        expect(drop.y).toBeLessThan(GameTuning.diveLineY); // 确实越过了俯冲线
+        expect(drop.y).toBeLessThanOrEqual(dropDespawnY()); // 也确实越过了"屏幕底 −30"
+        expect(framesBelowDespawn).toBeGreaterThan(50); // 有 70+ 帧是在出屏线**下方**被反复 stepDrop 的
+        expect(drop.collected).toBe(true);
+    });
+
+    it('已结算后不再有其它结果：越出屏线**不**返回 Fell（仍 Alive）、放回玩家身上也**不**再结算，账本无变化', () => {
+        const settled = makeDrop(631, 0, PLAYER_Y, DropKind.Soul, 3);
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
+
+        // ① 正常吸收一次（魂晶 3）
+        expect(stepDrop(settled, DT, makeWorld({ magnetRadius: 0, scrollDelta: 0 }))).toBe(DropOutcome.Collected);
+        collectLikeView(stats, ledger, settled);
+        const settledLedger = { ...ledger };
+        expect(settleCalls).toBe(1);
+        expect(settledLedger.souls).toBe(3);
+
+        const world = makeWorld({ magnetRadius: 0, playerX: 0, playerY: PLAYER_Y });
+
+        // ② 越过出屏线（屏幕底 −30 = -697）：**不许**返回 Fell（更不许返回 Collected）—— 只回 Alive
+        settled.y = dropDespawnY() - 0.5;
+        expect(stepDrop(settled, DT, world)).toBe(DropOutcome.Alive);
+        settled.y = dropDespawnY() - 5000; // 掉到屏幕下方 5000px 也照样只回 Alive
+        expect(stepDrop(settled, DT, world)).toBe(DropOutcome.Alive);
+
+        // ③ 再把它"放回"玩家身上（闸门与位置无关）：仍然只回 Alive
+        settled.x = 0;
+        settled.y = PLAYER_Y;
+        expect(stepDrop(settled, DT, world)).toBe(DropOutcome.Alive);
+
+        expect(settleCalls).toBe(1); // 一路都还是那**一次**结算
+        expect(ledger).toEqual(settledLedger); // 魂晶仍是 3（**没有**变成 6）
+        expect(settled.collected).toBe(true);
+
+        // 对照组（证明"不是判定坏了"）：**没结算过**的同类掉落物在同一个出屏位置 → 照常 Fell
+        const fresh = makeDrop(632, 0, dropDespawnY() - 0.5, DropKind.Soul, 3);
+        expect(stepDrop(fresh, DT, world)).toBe(DropOutcome.Fell);
+        expect(fresh.collected).toBeUndefined(); // Fell **不**置闸门（它本来就不产生收益）
+        expect(settleCalls).toBe(1); // 对照组也**没有**结算
+        expect(ledger).toEqual(settledLedger);
     });
 });

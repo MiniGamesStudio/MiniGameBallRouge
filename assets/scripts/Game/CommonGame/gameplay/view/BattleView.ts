@@ -961,7 +961,6 @@ export class BattleView extends Component {
             magnetRadius: GameTuning.magnetRadius,
             pickupRadius: GameTuning.pickupRadius,
             magnetSpeed: GameTuning.magnetSpeed,
-            autoCollectAtDiveLine: GameTuning.dropAutoCollectAtDiveLine,
         };
     }
 
@@ -1586,8 +1585,7 @@ export class BattleView extends Component {
     }
 
     /**
-     * 掉落物：**随世界滚动下移** → 磁吸 → 拾取 / 越俯冲线自动收取 → 超时消失。
-     *
+     * 掉落物：**随世界滚动下移** → 磁吸 → 拾取结算（**唯一**收益路径）/ 出屏消失（**不**结算）。
      * v1.10：掉落物是「**世界里的静止物体**」—— 散落偏移在生成时（`addDrop()`）算一次并
      * 烘进 `drop.x / drop.y`，之后**不再重算**（所以不会每帧抖动）；每帧的屏幕位移**全部**
      * 来自 `core/DropSim.ts` 的 `stepDrop()`，而它消费的 `m_DropWorld.scrollDelta` 就是
@@ -1597,8 +1595,10 @@ export class BattleView extends Component {
      * 而**磁吸照常**：磁吸是**玩家侧**行为、不是世界滚动（与"俯冲不受世界暂停影响"同口径，
      * 见策划案附录 K-3），在 `stepDrop()` 里它**叠加**在滚动位移之上。
      *
-     * 结算只有**一条**路径：`stepDrop()` 返回 `Collected`（正常拾取 **或** 越俯冲线自动收取，
-     * 两者共用同一个结果值）→ 一律走既有的 `collectDrop()`；`Expired` 只移除、不结算（§11.3）。
+     * 结算只有**一条**路径：`stepDrop()` 返回 `Collected` = **进入玩家吸收范围**（磁吸只负责把它送进来），
+     * → 一律走既有的 `collectDrop()`；`Fell`（越过屏幕底边再往下 `dropDespawnBelowScreen` = 30 px）**只销毁节点、绝不结算**（§11.3）。
+     *
+     * **绝不向上移动**（`dropNeverMovesUp`）：位移算完后单调夹取（本帧 y 不得大于进入时的 y）→ 玩家在掉落物上方时磁吸只能横向靠拢。
      */
     private updateDrops(d: number): void {
         // 与 updateEnemies() 完全对称：每帧把最新的玩家位置与**同一个**世界滚动位移写进仿真世界
@@ -1616,12 +1616,12 @@ export class BattleView extends Component {
             const outcome = stepDrop(drop, d, this.m_DropWorld);
 
             if (outcome === DropOutcome.Collected) {
-                this.collectDrop(drop); // ← 唯一结算入口：拾取与"越俯冲线自动收取"共用它
-                removed.push(drop.id);
+                this.collectDrop(drop); // ← 唯一结算入口：**只有**进入吸收范围（Collected）会走到这里
+                removed.push(drop.id); // 吸收后必须下场，否则每帧被重复结算（经验会一直涨）
                 continue;
             }
-            if (outcome === DropOutcome.Expired) {
-                removed.push(drop.id); // 超时也走同一条移除路径（移除但**不**结算）
+            if (outcome === DropOutcome.Fell) {
+                removed.push(drop.id); // 出屏消失：只销毁节点、**绝不结算**（与 Collected 严格区分）
                 continue;
             }
 

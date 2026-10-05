@@ -174,6 +174,8 @@ export interface DropRuntime {
     life: number;
     /** 是否已被玩家吸附（吸附后不再减速） */
     magnetized: boolean;
+    /** 已结算闸门：被吸收后置 true，之后**永不再产生收益**（即使调用方忘了把它移出场） */
+    collected?: boolean;
 }
 
 /**

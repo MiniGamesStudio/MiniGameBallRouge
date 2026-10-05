@@ -1,16 +1,28 @@
 /**
  * 掉落物仿真（纯逻辑层，不依赖 cc）—— 需求 4 / §11，v1.10 起接入**滚动世界**
  *
- * 三条口径（都能单测，见 tests/ball-roguelike/DropSim.test.ts）：
+ * 四条口径（都能单测，见 tests/ball-roguelike/DropSim.test.ts）：
  *   ① **掉落物是"世界里的静止物体"**：生成时**散落一次**（`dropScatterRadius` 内的世界内偏移，
  *      由 `BattleView.addDrop()` 一次性烘进 `drop.x / drop.y`，之后**绝不重算** → 不会每帧抖动）；
  *      此后每帧的屏幕位移**只**来自 `world.scrollDelta`（与敌人、背景**同一个值**）→ 三者严格锁步；
  *   ② **磁吸是玩家侧行为，叠加在滚动之上**：`stepDrop()` 里顺序写死「先滚动、再磁吸」，
  *      两者都是**位移**、谁也不覆盖谁 —— 所以「世界暂停时磁吸照常」自然成立
  *      （与"俯冲 Diving 不受世界暂停影响"的既有边界口径一致，见策划案附录 K-3）；
- *   ③ **越过俯冲线即自动收取**（`dropAutoCollectAtDiveLine`）：滚出战场的东西自动回收 → 掉落不丢；
- *      它与正常拾取**共用同一个结果值**，结算仍由玩法层既有的 `BattleView.collectDrop()` 做
- *      （本文件只回答"谁在哪、该不该结算"，**绝不新写一套结算**）。
+ *   ③ **绝不向上移动**（`dropNeverMovesUp`）：位移全部算完、判定**之前**做**单调夹取**
+ *      （本帧结束的 `y` 不得大于进入本帧时的 `y0`）—— 世界只会向下滚，掉落物就只应该向下；
+ *      水平方向**不受限制**（横向被吸是允许的）。玩家在掉落物**上方**时，磁吸只能横向靠拢、抬不起它；
+ *   ④ **已结算闸门**（`drop.collected`）：`Collected` 时**立刻置位**，此后**永不再产生收益**
+ *      （`stepDrop()` 每帧开头第一件事就是读它 → 直接 `Alive`，不再滚动 / 磁吸 / 判定）——
+ *      即使调用方**忘了把它移出场**（曾经的线上 bug：吸收后漏了移除 → 每帧重复结算 → 经验一直涨），
+ *      同一个掉落物也**只结算一次**。⚠️ `Fell`（出屏消失）**不置位**：它本来就不产生收益，
+ *      置位反而会**掩盖**"该消失却没消失"的簿记错误（见 ⑦ 的注释）。
+ *
+ * 结算与消失（v1.10 修订，**严格分开**，见 `DropOutcome`）：
+ *   · **唯一收益路径 = 进入玩家吸收范围**（`distance(drop, player) <= world.pickupRadius`）→ `Collected`
+ *     → 玩法层调既有的 `BattleView.collectDrop()`（磁吸只是"把掉落物送进吸收范围"的手段，不是结算路径）；
+ *   · **消失 = 越过屏幕底边再往下 `dropDespawnBelowScreen`(30) px** → `Fell` → 玩法层**只销毁节点、绝不结算**
+ *     （隔空加经验 / 金币不是玩法口径）；掉落物会一路下移**穿过** `diveLineY`，玩家在更低处仍能捡到；
+ *   · **存活计时 `drop.life` 不参与生死**：耗尽既不结算、也不移除（只作计数 / 未来"最后 3 s 闪烁"钩子）。
  *
  * 与 `EnemySim` 的分工完全对称：core 只算，view 只做「摆节点 + 结算」。
  */
@@ -18,19 +30,29 @@
 import { DropRuntime } from './GameTypes';
 import { GameTuning } from './GameTuning';
 import { WorldScrollConsumer } from './ScrollWorld';
-import { distance } from './BoardMath';
+import { distance, screenBounds } from './BoardMath';
 
 /** 一帧掉落物的处置结果 */
 export enum DropOutcome {
     /** 还在场上（下一帧继续） */
     Alive = 'alive',
-    /**
-     * 本轮**应结算** —— 正常拾取（进入 `pickupRadius`）与越俯冲线自动收取**共用这一个结果**，
-     * 因为两者必须走**同一条**结算路径（`BattleView.collectDrop()`）。
-     */
+    /** **唯一的收益结果**：进入玩家吸收范围（`pickupRadius`）→ 玩法层调 `BattleView.collectDrop()` */
     Collected = 'collected',
-    /** 存活时间耗尽：按 §11.3 的设计口径**移除但不结算**（超时消失，防止场上堆积） */
-    Expired = 'expired',
+    /**
+     * **出屏消失**：越过屏幕底边再往下 `dropDespawnBelowScreen` px → 玩法层**只销毁节点**、
+     * **绝不结算**。与 `Collected` **严格区分**（两个结果值不同 → 视图层不可能把"消失"当"拾取"）。
+     */
+    Fell = 'fell',
+}
+
+/**
+ * 掉落物**出屏消失**的阈值 y = 屏幕**底边**再往下 `dropDespawnBelowScreen` px。
+ *
+ * 口径：以掉落物**中心**为准（点状小物件，中心即判定点）；`dropDespawnBelowScreen <= 0` → 贴屏幕底即消失。
+ * 单测独立按 `screenBounds().bottom - GameTuning.dropDespawnBelowScreen` 复算一遍（不只看本函数）。
+ */
+export function dropDespawnY(): number {
+    return screenBounds().bottom - GameTuning.dropDespawnBelowScreen;
 }
 
 /**
@@ -45,36 +67,27 @@ export interface DropWorld extends WorldScrollConsumer {
     playerY: number;
     /** 本帧磁吸半径 px（= `GameTuning.magnetRadius` + 技能 / 外围加点加成，由玩法层每帧写入） */
     magnetRadius: number;
-    /** 拾取半径 px（进入即结算） */
+    /** 拾取半径 px（**唯一**的结算路径：进入即 `Collected`） */
     pickupRadius: number;
     /** 磁吸飞行速度 px/s */
     magnetSpeed: number;
-    /** 越过俯冲线（`GameTuning.diveLineY`）是否自动收取 */
-    autoCollectAtDiveLine: boolean;
-}
-
-/**
- * 掉落物是否已越过俯冲线。
- *
- * 口径：以掉落物**中心**越线为准（`y <= diveLineY`）。
- * 与敌人**刻意不同** —— 敌人用「自身矩形**底边**」（`EnemySim.hasCrossedDiveLine()`），
- * 因为敌人是占格的大块、判定按占格来；掉落物是点状小物件、没有占格，**中心即判定点**。
- */
-export function hasDropCrossedDiveLine(drop: DropRuntime): boolean {
-    return drop.y <= GameTuning.diveLineY;
 }
 
 /**
  * 推进一个掉落物一帧（原地修改 `drop`），返回本帧处置结果。
  *
- * **顺序写死**（这就是"磁吸不被滚动覆盖"的保证）：
- *   ① 存活计时（与世界滚动无关：世界暂停时计时**照走**，与 Telegraph 的 `stateTime` 口径一致）；
- *   ② **世界滚动位移** `drop.y -= world.scrollDelta`（世界里的静止物体，被背景带着走）；
- *   ③ **磁吸位移**（玩家侧行为，**叠加**在 ② 之上，不替换、不覆盖）；
- *   ④ 拾取判定（用本帧**最终**位置）；
- *   ⑤ 越俯冲线自动收取。
+ * **顺序写死**（这就是"磁吸不被滚动覆盖"与"绝不上升"的保证）：
+ *   ⓪ **已结算闸门**（`drop.collected`）→ 直接返回 `Alive`（②~⑦ 一概不做：不滚动、不磁吸、不计时、不判定）；
+ *   ① 记下进入本帧时的 `y0`（⑤ 单调夹取的基准，**必须在任何位移之前**取）；
+ *   ② 存活计时（与世界滚动无关：**世界暂停时冻结**（`dropLifePausesWithWorld` 且 `scrollDelta === 0` 时不扣 life；
+ *      磁吸不受影响、照常））—— ⚠️ life **不参与生死**：耗尽既不结算、也不移除；
+ *   ③ **世界滚动位移** `drop.y -= world.scrollDelta`（世界里的静止物体，被背景带着走）；
+ *   ④ **磁吸位移**（玩家侧行为，**叠加**在 ③ 之上，不替换、不覆盖；水平方向不受限）；
+ *   ⑤ **单调夹取**：`dropNeverMovesUp` 且 `drop.y > y0` → `drop.y = y0`（**判定之前**做 —— 判定只看夹取后的位置）；
+ *   ⑥ **拾取判定**（唯一收益路径）→ `Collected`；
+ *   ⑦ **出屏消失** `drop.y <= 屏幕底 - dropDespawnBelowScreen` → `Fell`（**不结算**）。
  *
- * ⚠️ `dt` 只影响 **① 计时** 与 **③ 磁吸步长**，**不影响 ②** —— `scrollDelta` 本身就是一个
+ * ⚠️ `dt` 只影响 **② 计时** 与 **④ 磁吸步长**，**不影响 ③** —— `scrollDelta` 本身就是一个
  * **位移**（它已经含了 dt，由 `advanceWorldScroll()` 算出）。这与敌人完全同口径
  * （`EnemySim` 的 Falling 分支同样是 `enemy.y -= world.scrollDelta`，也不再看 dt）。
  *
@@ -82,22 +95,30 @@ export function hasDropCrossedDiveLine(drop: DropRuntime): boolean {
  * 它由 `ScrollWorld.effectiveScrollDelta()` 产出，天然是有限非负数，编译期又是必填字段。
  *
  * @param drop 掉落物数据（原地修改）
- * @param dt 帧间隔（s；非有限值 / 负数按 0 处理，此时仍会做拾取与自动收取判定）
+ * @param dt 帧间隔（s；非有限值 / 负数按 0 处理，此时仍会做拾取与出屏判定）
  * @param world 世界信息（`scrollDelta` 必填）
  */
 export function stepDrop(drop: DropRuntime, dt: number, world: DropWorld): DropOutcome {
     if (!drop) return DropOutcome.Alive;
+
+    // 已结算闸门：吸收过的掉落物**绝不再产生收益** —— 即使 view 层忘了把它从场上移除
+    if (drop.collected) return DropOutcome.Alive;
+
     const step = Number.isFinite(dt) && dt > 0 ? dt : 0;
 
-    // ① 存活计时：超时**优先于**拾取（与既有实现一致：先扣 life、超时即移除）
-    drop.life -= step;
-    if (drop.life <= 0) return DropOutcome.Expired;
+    // ① 单调夹取的基准：**进入本帧时**的 y（必须在 ③④ 任何位移之前取）
+    const y0 = drop.y;
 
-    // ② 世界滚动位移：与 EnemySim 的 Falling 分支是同一句；
+    // ② 存活计时：世界暂停（scrollDelta === 0）时**冻结**（磁吸照常、寿命冻结）。
+    //    ⚠️ life 已**不参与生死**：耗尽既不结算、也不移除（唯一消失路径是 ⑦ 出屏）—— 所以这里没有 return。
+    const lifeFrozen = GameTuning.dropLifePausesWithWorld && world.scrollDelta === 0;
+    if (!lifeFrozen) drop.life -= step;
+
+    // ③ 世界滚动位移：与 EnemySim 的 Falling 分支是同一句；
     //    世界暂停（任一敌人停住）时 scrollDelta = 0 → 这一句天然什么都不做 → 掉落物一起停
     drop.y -= world.scrollDelta;
 
-    // ③ 磁吸：进入范围即永久吸附；朝玩家飞 —— **叠加**在滚动位移之上（世界暂停时磁吸照常）
+    // ④ 磁吸：进入范围即永久吸附；朝玩家飞 —— **叠加**在滚动位移之上（世界暂停时磁吸照常）
     const dist = distance(drop.x, drop.y, world.playerX, world.playerY);
     if (!drop.magnetized && dist <= world.magnetRadius) drop.magnetized = true;
     if (drop.magnetized && dist > world.pickupRadius) {
@@ -107,14 +128,24 @@ export function stepDrop(drop: DropRuntime, dt: number, world: DropWorld): DropO
         drop.y += (world.playerY - drop.y) * ratio;
     }
 
-    // ④ 拾取：用**本帧最终位置**判定（先滚动、再磁吸 → 判定不吃上一帧的滞后）
+    // ⑤ 单调夹取（**绝不向上移动**）：位移都算完了才夹，且**先夹后判** →
+    //    判定看到的位置永远满足「y <= 进入本帧时的 y0」；水平方向（x）不受限制（横向被吸是允许的）
+    if (GameTuning.dropNeverMovesUp && drop.y > y0) drop.y = y0;
+
+    // ⑥ 拾取：用**本帧最终位置**判定（先滚动、再磁吸、再夹取 → 判定不吃上一帧的滞后）
+    //    ⚠️ 这是**唯一**会产生收益的路径 —— 也**只有这一处**置「已结算闸门」：
+    //    置位后，同一个掉落物即使还留在场上（调用方漏了移除），下一帧起也只会拿到 ⓪ 的 `Alive`
     if (distance(drop.x, drop.y, world.playerX, world.playerY) <= world.pickupRadius) {
+        drop.collected = true;
         return DropOutcome.Collected;
     }
 
-    // ⑤ 越俯冲线自动收取：滚出战场的掉落物自动回收（掉落不丢；结算路径与 ④ 完全相同）
-    if (world.autoCollectAtDiveLine && hasDropCrossedDiveLine(drop)) {
-        return DropOutcome.Collected;
+    // ⑦ 出屏消失：越过屏幕**底边**再往下 dropDespawnBelowScreen px → 移除但**绝不结算**。
+    //    掉落物会一路下移穿过 diveLineY（越俯冲线**不再**收取）→ 玩家在更低处仍能捡到。
+    //    ⚠️ 这里**不**置 `drop.collected`：`Fell` 本来就不产生收益（置位是多余的），而且置位会把
+    //    "该消失却没消失"的簿记错误**掩盖**掉（下一帧会静默返回 `Alive`）—— 闸门只管"进过账的不许再进"
+    if (drop.y <= dropDespawnY()) {
+        return DropOutcome.Fell;
     }
 
     return DropOutcome.Alive;

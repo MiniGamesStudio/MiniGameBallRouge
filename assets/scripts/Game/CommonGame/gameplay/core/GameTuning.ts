@@ -9,7 +9,6 @@
  * 由 applyTuningValues() 用表里的值覆盖本文件默认值即可，玩法代码不用改。
  * 每一项都对应配置表里的一个键（键名见策划案 §16.2 / 附录 A.10）。
  */
-
 export const GameTuning = {
     // ─────────── 场地与度量（§5） ───────────
     /** 设计分辨率宽 */
@@ -39,7 +38,6 @@ export const GameTuning = {
     diveLineY: -507,
     /** 玩家出生点距屏幕底部的高度 */
     playerSpawnBottomOffset: 192,
-
     // ─────────── 玩家（§8.6 / 附录 A.1） ───────────
     /** 玩家血量（占位默认值，正式值走 Player 表） */
     playerMaxHp: 100,
@@ -52,7 +50,6 @@ export const GameTuning = {
      * 而不是「必须精确按在判定圆里」。
      */
     playerGrabRadius: 74,
-
     // ─────────── 操作与瞄准（附录 J / v1.9） ───────────
     /**
      * 兜底自动瞄准：**瞄准触摸**空闲多少秒后自动锁定「最近的可命中敌人」（`pickAutoAimTarget`）。
@@ -79,7 +76,6 @@ export const GameTuning = {
      * 只约束第一次相交之后的段，主射线永远画满到墙。
      */
     aimGuideBounceLength: 900,
-
     // ─────────── 子弹（§6.6） ───────────
     /** 弹匣容量 */
     bulletCount: 5,
@@ -103,7 +99,6 @@ export const GameTuning = {
     maxSubStepDistance: 13,
     /** 单帧子步上限 */
     maxSubStepCount: 16,
-
     // ─────────── 敌人（§7） ───────────
     /** 每格基础血量，按品质 白/绿/蓝/紫/金/红 */
     qualityHpPerCell: [12, 20, 35, 55, 90, 150],
@@ -123,7 +118,6 @@ export const GameTuning = {
     superCrystalCount: [0, 1, 1, 2],
     /** 关卡行模板里单个敌人最多占的行数（大怪优先装箱的前提） */
     maxEnemyRowSpan: 4,
-
     // ─────────── 关卡生成与下落（§9） ───────────
     /** 每关波数（占位默认值，正式值走 Wave 表） */
     wavesPerLevel: 8,
@@ -159,7 +153,6 @@ export const GameTuning = {
     hpGrowth: 0.12,
     /** 血量成长上限倍率 */
     hpCapMul: 2.5,
-
     // ─────────── 背景滚动 / 滚动世界（v1.10 / §9.2） ───────────
     /**
      * 背景滚动层总开关。关掉就**不创建背景层**（世界滚动照常驱动敌人与波次推进，
@@ -230,7 +223,6 @@ export const GameTuning = {
     backgroundSeamFadeMaxStripPx: 0.5,
     /** 背景网格线不透明度（0~255）：**低对比度**，不抢敌人与瞄准射线的视觉 */
     backgroundGridAlpha: 26,
-
     // ─────────── 俯冲（§9.4） ───────────
     /** 越线后的判定等待时间（s），此期间可被击杀 */
     diveTelegraph: 1.0,
@@ -248,7 +240,6 @@ export const GameTuning = {
     diveScaleUpTime: 0.4,
     /** 飞行途中缩小到的倍数 */
     diveScaleDown: 0.5,
-
     // ─────────── 掉落与成长（§11） ───────────
     /**
      * 掉落物散落半径（0.2 格 = 25.6 px，取整 26）。
@@ -259,30 +250,30 @@ export const GameTuning = {
     dropScatterRadius: 26,
     /** 磁吸半径（1.5 格 = 192 px），可被技能/加点提升 */
     magnetRadius: 192,
-    /** 拾取半径 */
+    /** 拾取半径 px：**唯一**的收益结算路径（进入即 Collected → BattleView.collectDrop()）；磁吸只负责把掉落物送进来 */
     pickupRadius: 38,
     /** 磁吸飞行速度 px/s（玩家侧行为：**世界暂停时照常**，与滚动位移叠加，见 core/DropSim.ts） */
     magnetSpeed: 1120,
-    /** 掉落物存活时间（s）：超时**移除但不结算**（§11.3 的"防止堆积"口径） */
+    /** 掉落物存活时间（s）：v1.10 修订起**不参与生死** —— life 耗尽既不结算、也不移除（只作计数 / 未来闪烁钩子）；世界暂停时冻结（dropLifePausesWithWorld） */
     dropLifeTime: 15,
     /**
-     * 掉落物越过俯冲线（`diveLineY`）即**自动收取**。
-     *
-     * v1.10 起掉落物随世界滚动下移 → 不加这一条它们会掉出屏幕底部、**凭空消失**（掉落是经济来源）。
-     * 开启后"滚出战场的掉落物自动回收"，收取走的是与正常拾取**同一条**结算路径
-     * （`BattleView.collectDrop()`，不新写结算）；false = 允许掉出屏幕（只有超时会丢）。
-     *
-     * ⚠️ 与 `backgroundScrollEnabled` / `backgroundSeamFade` 一样是**布尔项**：
-     * `applyTuningValues()` 只覆盖 number，所以它**只能改代码默认值**（不进配置表）。
+     * 掉落物**出屏消失**：越过屏幕**底边**（screenBounds().bottom）后再往下这么多 px 才移除。
+     * v1.10 修订：掉落物**只在吸收范围内**才被吸收，否则一路下移到屏幕最下方再 +30 px 才消失（正值 = 更晚消失、<= 0 = 贴屏幕底即消失）。
+     * 消失用 DropOutcome.Fell → 玩法层**只销毁节点、绝不结算**；⚠️ 这是**唯一的消失路径**（drop.life 已不参与生死）。
      */
-    dropAutoCollectAtDiveLine: true,
+    dropDespawnBelowScreen: 30,
+    /** **绝不向上移动**（单调不上升夹取，默认开启）：位移全部算完后把 y 夹到「<= 进入本帧时的 y」（水平方向不限）。
+     * 世界只向下滚 → 掉落物只应向下；副作用正是需求要的：玩家在掉落物**上方**时磁吸只能**横向**靠拢、抬不起来。
+     */
+    dropNeverMovesUp: true,
+    /** 世界暂停（任一敌人被停住）时是否冻结存活计时（true = 冻结；磁吸不受影响、照常生效）。⚠️ life 已不参与生死判定，本项只影响这个计数值 */
+    dropLifePausesWithWorld: true,
     /** 升级所需经验：need(n) = 8 + 6(n-1) + 1.5(n-1)^2 */
     expNeedBase: 8,
     expNeedLinear: 6,
     expNeedQuadratic: 1.5,
     /** 升级 / 开局天赋的候选数量 */
     choiceCount: 3,
-
     // ─────────── 美术适配 ───────────
     /**
      * 怪物 / 玩家图在占格内的占比（contain 适配的留白系数）。
@@ -310,7 +301,6 @@ export const GameTuning = {
     dropExpMaxScale: 1.8,
     dropSoulScalePerValue: 0.25,
     dropSoulMaxScale: 2.0,
-
     // ─────────── 打击反馈（受击闪白 / 敌人震动） ───────────
     /** 受击闪白持续时间（s） */
     hitFlashTime: 0.12,
@@ -321,10 +311,8 @@ export const GameTuning = {
     /** 敌人受击震动幅度（px，左右上下随机抖动，随时间衰减） */
     hitShakeAmplitude: 5,
 };
-
 /** 数值键名类型，便于后续用配置表覆盖 */
 export type GameTuningKey = keyof typeof GameTuning;
-
 /**
  * 用配置表数值覆盖默认值（接入 FlatBuffers 配置后调用）
  * @param values 键 -> 值
