@@ -81,7 +81,7 @@ const CURSOR_CLAMP_RADIUS = 45;
 /** 瞄准辅助射线默认反射次数：1 = 主射线 + 首段反弹射线（与真实弹道一致；反射对象可能是墙、也可能是敌人） */
 const AIM_GUIDE_BOUNCE = 1;
 /** 辅助射线描边色（深色，与伤害飘字描边同色系）：alpha 由 `aimGuideOutlineAlpha` 覆盖（见 strokeDashes） */
-const AIM_GUIDE_OUTLINE = new Color(20, 12, 0, 255);
+const AIM_GUIDE_OUTLINE = new Color(255, 255, 255, 255);
 /** `buildDashSegments()` 返回的单段虚线：part = 所属折线段序号（0 = 主射线，>= 1 = 首段反弹） */
 type DashSegment = ReturnType<typeof buildDashSegments>[number];
 /** 浮标贴屏幕边缘时保留的余量 px（≈半个浮标高度）：保证浮标整体不出屏、随时可见 */
