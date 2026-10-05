@@ -63,7 +63,13 @@ export const GameTuning = {
     /** 瞄准辅助射线总开关（关掉就不画主射线与反弹段） */
     aimGuideEnabled: true,
     /** 辅助射线宽度 px */
-    aimGuideWidth: 6,
+    aimGuideWidth: 10,
+    /** 瞄准射线虚线：段长 px（<=0 退化实线）/ 间隔 px */
+    aimGuideDashLength: 18,
+    aimGuideDashGap: 12,
+    /** 瞄准射线描边：单边宽度 px / 透明度 */
+    aimGuideOutline: 2,
+    aimGuideOutlineAlpha: 150,
     /** 主射线不透明度（0~255）：半透明白，不遮挡敌人 */
     aimGuideAlpha: 130,
     /** 首段反弹射线不透明度（0~255）：比主射线更淡 */

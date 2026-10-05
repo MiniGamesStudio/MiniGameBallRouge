@@ -246,3 +246,42 @@ export function traceAimGuide(
 
     return verts;
 }
+/** 把折线切成虚线段：沿累计弧长推进 dash+gap 周期，**相位跨顶点连续**（拐点不断缝）
+ *  dashLength<=0 或 gapLength<0 → 退化为实线；part = 该小段所属折线段序号（0=主射线，1=首段反弹） */
+export function buildDashSegments(
+    points: Vec2[],
+    dashLength: number,
+    gapLength: number,
+    phase: number = 0
+): { x1: number; y1: number; x2: number; y2: number; part: number }[] {
+    const out: { x1: number; y1: number; x2: number; y2: number; part: number }[] = [];
+    if (!points || points.length < 2) return out;
+    const dash = dashLength > 0 ? dashLength : 0;
+    const gap = gapLength > 0 ? gapLength : 0;
+    for (let i = 0; i < points.length - 1; i++) {
+        const a = points[i];
+        const b = points[i + 1];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        if (len <= 1e-6) continue;
+        const ux = dx / len;
+        const uy = dy / len;
+        if (dash <= 0 || gapLength < 0) {
+            out.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, part: i });
+            continue;
+        }
+        const period = dash + gap;
+        let t = phase % period;
+        if (t < 0) t += period;
+        let s = -t;
+        while (s < len) {
+            const s0 = Math.max(0, s);
+            const s1 = Math.min(len, s + dash);
+            if (s1 > s0 + 1e-6) out.push({ x1: a.x + ux * s0, y1: a.y + uy * s0, x2: a.x + ux * s1, y2: a.y + uy * s1, part: i });
+            s += period;
+        }
+        phase = (phase + len) % period;
+    }
+    return out;
+}

@@ -14,7 +14,7 @@ import {
     EnemyType,
     Quality,
 } from '../../assets/scripts/Game/CommonGame/gameplay/core/GameTypes';
-import { traceAimGuide } from '../../assets/scripts/Game/CommonGame/gameplay/core/AimGuide';
+import { buildDashSegments, traceAimGuide } from '../../assets/scripts/Game/CommonGame/gameplay/core/AimGuide';
 import {
     BulletWorld,
     aimVelocity,
@@ -653,5 +653,190 @@ describe('兜底自动瞄准：pickAutoAimTarget（附录 J）', () => {
 
         expect(pickAutoAimTarget(0, 0, list)).toBe(a);
         expect(JSON.stringify(list)).toBe(before);
+    });
+});
+
+describe('虚线切割：buildDashSegments（v1.9 虚线 + 描边）', () => {
+    /** 小段端点 → 沿**整条折线**的累计弧长区间；`part` 已经是折线段序号，正好当基准长用 */
+    function arcSpans(
+        points: { x: number; y: number }[],
+        segs: { x1: number; y1: number; x2: number; y2: number; part: number }[]
+    ): { start: number; end: number; part: number }[] {
+        const base: number[] = [0];
+        for (let i = 1; i < points.length; i++) {
+            base.push(base[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+        }
+        return segs.map((s) => {
+            const a = points[s.part];
+            const off = base[s.part];
+            return {
+                start: off + Math.hypot(s.x1 - a.x, s.y1 - a.y),
+                end: off + Math.hypot(s.x2 - a.x, s.y2 - a.y),
+                part: s.part,
+            };
+        });
+    }
+
+    /** 逐字段核对一个小段（浮点比较，避免 0.6 × 50 这类表示误差） */
+    function expectDash(
+        seg: { x1: number; y1: number; x2: number; y2: number; part: number },
+        x1: number,
+        y1: number,
+        x2: number,
+        y2: number,
+        part: number
+    ): void {
+        expect(seg.part).toBe(part);
+        expect(seg.x1).toBeCloseTo(x1, 9);
+        expect(seg.y1).toBeCloseTo(y1, 9);
+        expect(seg.x2).toBeCloseTo(x2, 9);
+        expect(seg.y2).toBeCloseTo(y2, 9);
+    }
+
+    it('dash=10 / gap=10 切 100px 直线 → 5 段，段长 = dash、相邻小段间距 = gap', () => {
+        const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+        const segs = buildDashSegments(pts, 10, 10);
+
+        expect(segs.length).toBe(5); // 100 / (10 + 10) = 5
+        expect(segs.every((s) => s.part === 0)).toBe(true); // 单段折线：全是主射线
+
+        const spans = arcSpans(pts, segs);
+        spans.forEach((sp, i) => {
+            expect(sp.end - sp.start).toBeCloseTo(10, 9); // 每段长 = dash
+            expect(sp.start).toBeCloseTo(i * 20, 9); // 周期 = dash + gap
+        });
+        for (let i = 1; i < spans.length; i++) {
+            expect(spans[i].start - spans[i - 1].end).toBeCloseTo(10, 9); // 间距 = gap
+        }
+        expect(100 - spans[spans.length - 1].end).toBeCloseTo(10, 9); // 末段后的余量同样 = gap
+    });
+
+    it('跨顶点相位连续：拐点处不断缝、不重置（跨拐点的小段总长仍是 dash）', () => {
+        // 首段 25px 刻意**不是**周期 20 的整数倍：相位必须带到第二段（25 % 20 = 5）
+        const pts = [{ x: 0, y: 0 }, { x: 25, y: 0 }, { x: 25, y: 60 }];
+        const segs = buildDashSegments(pts, 10, 10);
+        const main = segs.filter((s) => s.part === 0);
+        const bounce = segs.filter((s) => s.part === 1);
+
+        // 主射线：0~10、20~25（第二段被拐点截断成 5px）
+        expect(main.length).toBe(2);
+        expectDash(main[0], 0, 0, 10, 0, 0);
+        expectDash(main[1], 20, 0, 25, 0, 0);
+
+        // 反弹段紧接着从拐点起只画 5px —— 因为跨拐点的那一段还剩 5px 没画完
+        expectDash(bounce[0], 25, 0, 25, 5, 1);
+        expectDash(bounce[1], 25, 15, 25, 25, 1);
+
+        // 跨拐点的小段总弧长 = dash（若在顶点重置相位，这里会变成 5 + 10 = 15）
+        const spans = arcSpans(pts, segs);
+        const lastMain = spans[1];
+        const firstBounce = spans[2];
+        expect(lastMain.end).toBeCloseTo(25, 9); // 主射线正好画到拐点
+        expect(firstBounce.start).toBeCloseTo(25, 9); // 反弹段从拐点起，中间无缝
+        expect(firstBounce.end - lastMain.start).toBeCloseTo(10, 9);
+    });
+
+    it('dash <= 0 或 gap < 0 → 退化为实线（1 段 = 整段，端点原样复制）', () => {
+        const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+
+        [0, -1, -100].forEach((dash) => {
+            expect(buildDashSegments(pts, dash, 10)).toEqual([
+                { x1: 0, y1: 0, x2: 100, y2: 0, part: 0 },
+            ]);
+        });
+        [-0.5, -1, -100].forEach((gap) => {
+            expect(buildDashSegments(pts, 10, gap)).toEqual([
+                { x1: 0, y1: 0, x2: 100, y2: 0, part: 0 },
+            ]);
+        });
+
+        // 多段折线：每段各退化成「一整条」，part 仍是折线段序号
+        expect(buildDashSegments([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }], 0, 12)).toEqual([
+            { x1: 0, y1: 0, x2: 100, y2: 0, part: 0 },
+            { x1: 100, y1: 0, x2: 100, y2: 50, part: 1 },
+        ]);
+    });
+
+    it('gap = 0 → 仍然按 dash 切段，但首尾相接（视觉上等效实线）', () => {
+        const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+        const segs = buildDashSegments(pts, 10, 0);
+        const spans = arcSpans(pts, segs);
+
+        expect(segs.length).toBe(10); // 周期 = dash + 0
+        spans.forEach((sp, i) => expect(sp.start).toBeCloseTo(i * 10, 9));
+        for (let i = 1; i < spans.length; i++) {
+            expect(spans[i].start - spans[i - 1].end).toBeCloseTo(0, 9); // 无缝
+        }
+    });
+
+    it('折线段短于 dash → 整段一个小段（不超画到段外）', () => {
+        expect(buildDashSegments([{ x: 0, y: 0 }, { x: 6, y: 0 }], 10, 10)).toEqual([
+            { x1: 0, y1: 0, x2: 6, y2: 0, part: 0 },
+        ]);
+    });
+
+    it('零长折线段被跳过；points 不足 2 个点 / 全零长 → 空数组', () => {
+        expect(buildDashSegments([], 10, 10)).toEqual([]);
+        expect(buildDashSegments([{ x: 5, y: 5 }], 10, 10)).toEqual([]);
+        expect(buildDashSegments([{ x: 5, y: 5 }, { x: 5, y: 5 }], 10, 10)).toEqual([]);
+        expect(buildDashSegments([{ x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }], 10, 10)).toEqual([]);
+
+        // 零长段自己不产生小段，也不推进相位：后面 100px 那段照常切 5 段，part 是它的折线序号 1
+        const segs = buildDashSegments([{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 100, y: 0 }], 10, 10);
+        expect(segs.length).toBe(5);
+        expect(segs.every((s) => s.part === 1)).toBe(true);
+        expect(segs.some((s) => !Number.isFinite(s.x1) || !Number.isFinite(s.y1))).toBe(false);
+        expect(segs.some((s) => !Number.isFinite(s.x2) || !Number.isFinite(s.y2))).toBe(false);
+    });
+
+    it('part 标记正确：第二段折线上的小段 part = 1，顺序仍是折线顺序', () => {
+        const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }];
+        const segs = buildDashSegments(pts, 10, 10);
+        const main = segs.filter((s) => s.part === 0);
+        const bounce = segs.filter((s) => s.part === 1);
+
+        expect(main.length).toBe(5);
+        expect(bounce.length).toBe(5);
+        // 主射线全在水平段上、反弹段全在竖直段上（两层各画各的，不会串层）
+        expect(main.every((s) => s.y1 === 0 && s.y2 === 0)).toBe(true);
+        expect(bounce.every((s) => s.x1 === 100 && s.x2 === 100)).toBe(true);
+        expect(segs.map((s) => s.part)).toEqual([0, 0, 0, 0, 0, 1, 1, 1, 1, 1]);
+    });
+
+    it('斜线段按**累计弧长**切（3-4-5 方向），不是按坐标轴', () => {
+        const pts = [{ x: 0, y: 0 }, { x: 30, y: 40 }]; // 长 50px
+        const segs = buildDashSegments(pts, 10, 10);
+        const spans = arcSpans(pts, segs);
+
+        expect(segs.length).toBe(3); // 0~10 / 20~30 / 40~50
+        spans.forEach((sp) => expect(sp.end - sp.start).toBeCloseTo(10, 9));
+        expect(spans[0].start).toBeCloseTo(0, 9);
+        expect(spans[1].start).toBeCloseTo(20, 9);
+        expect(spans[2].end).toBeCloseTo(50, 9); // 末段正好画到顶点
+        expectDash(segs[2], 24, 32, 30, 40, 0);
+    });
+
+    it('phase 参数：可从任意相位续接（负相位 / 超一个周期按周期取模）', () => {
+        const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }];
+
+        // phase = 5：这一相位的 dash 已经画了 5px，所以首段只剩 5px
+        const a = buildDashSegments(pts, 10, 10, 5);
+        expectDash(a[0], 0, 0, 5, 0, 0);
+        expectDash(a[1], 15, 0, 25, 0, 0);
+
+        // phase = -5 ≡ 15（mod 20）：首段从第 5px 起，到第 15px 止
+        const b = buildDashSegments(pts, 10, 10, -5);
+        expectDash(b[0], 5, 0, 15, 0, 0);
+
+        // 相位 ≥ 一个周期 → 等价于取模后的相位
+        expect(buildDashSegments(pts, 10, 10, 25)).toEqual(a);
+    });
+
+    it('纯函数：不改传入的顶点数组', () => {
+        const pts = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 60 }];
+        const before = JSON.stringify(pts);
+
+        buildDashSegments(pts, 10, 10, 3);
+        expect(JSON.stringify(pts)).toBe(before);
     });
 });

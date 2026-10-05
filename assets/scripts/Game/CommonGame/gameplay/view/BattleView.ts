@@ -32,7 +32,7 @@ import {
 } from '../core/BoardMath';
 import { BulletWorld, aimVelocity, createBullet, stepBullet } from '../core/BulletSim';
 import { EnemyWorld, applyStopBlocking, enemyVisualScale, isDead, isHittable, killEnemy, pickAutoAimTarget, stepEnemy } from '../core/EnemySim';
-import { traceAimGuide } from '../core/AimGuide';
+import { buildDashSegments, traceAimGuide } from '../core/AimGuide';
 import {
     catchRadiusWithBonus,
     enemyCoinValue,
@@ -80,6 +80,10 @@ const { ccclass } = _decorator;
 const CURSOR_CLAMP_RADIUS = 45;
 /** 瞄准辅助射线默认反射次数：1 = 主射线 + 首段反弹射线（与真实弹道一致；反射对象可能是墙、也可能是敌人） */
 const AIM_GUIDE_BOUNCE = 1;
+/** 辅助射线描边色（深色，与伤害飘字描边同色系）：alpha 由 `aimGuideOutlineAlpha` 覆盖（见 strokeDashes） */
+const AIM_GUIDE_OUTLINE = new Color(20, 12, 0, 255);
+/** `buildDashSegments()` 返回的单段虚线：part = 所属折线段序号（0 = 主射线，>= 1 = 首段反弹） */
+type DashSegment = ReturnType<typeof buildDashSegments>[number];
 /** 浮标贴屏幕边缘时保留的余量 px（≈半个浮标高度）：保证浮标整体不出屏、随时可见 */
 const CURSOR_FLOAT_EDGE_MARGIN = 48;
 /** 伤害飘字颜色：敌人·普通 / 敌人·暴击 / 玩家·普通 / 玩家·暴击 */
@@ -516,12 +520,19 @@ export class BattleView extends Component {
      * 顶/左/右墙镜面反射、遇敌按命中面反射（真实子弹撞敌人本来就只反弹不消失），
      * 底墙不反射（子弹在那里转入回身，射线到此为止）。
      * 传入当帧的 `m_Enemies`（本函数在 `updateEnemies` 之后调用）→ 敌人移动后射线每帧自动重算。
+     *
+     * v1.9 补丁：折线不再画实线，先沿**累计弧长**切成虚线（`buildDashSegments()`：段长
+     * `aimGuideDashLength` / 间隔 `aimGuideDashGap`，相位跨顶点连续 → 拐点处不断缝、也不重置相位），
+     * 再按 `part` 把虚线分到两层：`part = 0`（主射线）进 `AimRay`，`part >= 1`（首段反弹，与旧实现
+     * 「从第 2 个顶点起全部按更淡的画」同口径）进 `AimBounceRay` —— 两段因此各自保留
+     * `aimGuideAlpha` / `aimGuideBounceAlpha`。每段小线**画两遍**实现描边，见 `strokeDashes()`。
      */
     private drawAimGuide(): void {
         const ray = this.m_AimRay;
         const bounce = this.m_AimBounceRay;
         if (!ray || !ray.isValid || !bounce || !bounce.isValid) return;
 
+        // 每帧重画前先清空：关掉总开关时同样要清（否则上一帧的射线会留在画布上不消失）
         ray.clear();
         bounce.clear();
         if (!GameTuning.aimGuideEnabled) return;
@@ -538,21 +549,60 @@ export class BattleView extends Component {
         );
         if (verts.length < 2) return; // 退化方向（瞄准点与玩家重合）：不画
 
-        const width = GameTuning.aimGuideWidth;
-        ray.lineWidth = width;
-        ray.strokeColor = new Color(255, 255, 255, GameTuning.aimGuideAlpha);
-        ray.moveTo(verts[0].x, verts[0].y);
-        ray.lineTo(verts[1].x, verts[1].y);
-        ray.stroke();
+        // phase 固定 0：虚线相位每帧都从玩家中心起算，所以不会随帧抖动
+        const dashes = buildDashSegments(
+            verts,
+            GameTuning.aimGuideDashLength,
+            GameTuning.aimGuideDashGap,
+            0
+        );
+        if (dashes.length === 0) return; // 全是零长段（退化输入）：两层保持空
 
-        // 首段反弹：从第一次相交点按真实反射方向续画（顶点可能多于 2 段，全部按更淡的画）
-        if (verts.length >= 3) {
-            bounce.lineWidth = width;
-            bounce.strokeColor = new Color(255, 255, 255, GameTuning.aimGuideBounceAlpha);
-            bounce.moveTo(verts[1].x, verts[1].y);
-            for (let i = 2; i < verts.length; i++) bounce.lineTo(verts[i].x, verts[i].y);
-            bounce.stroke();
-        }
+        this.strokeDashes(ray, dashes, true, GameTuning.aimGuideAlpha);
+        this.strokeDashes(bounce, dashes, false, GameTuning.aimGuideBounceAlpha);
+    }
+
+    /**
+     * 把虚线画到某一层：**每段小线画两遍** = 粗深色描边 + 正常宽度亮线（描边效果）。
+     *
+     * ① 描边遍：`lineWidth = aimGuideWidth + 2 * aimGuideOutline`（`aimGuideOutline` 是**单边**宽度），
+     *    颜色 = 模块常量 `AIM_GUIDE_OUTLINE` 的 RGB + `aimGuideOutlineAlpha`；
+     * ② 亮线遍：宽度恢复 `aimGuideWidth`，颜色为半透明白（alpha 由调用方按「主射线 / 反弹段」给）。
+     *
+     * 两遍都是「先 moveTo/lineTo 攒齐本层所有小段、再 stroke() 一次」：粗深色先落进渲染数据，
+     * 亮线再压在上面 → 亮线盖住描边中心，两侧各留 `aimGuideOutline` px 的深色边。
+     *
+     * @param wantMain true = 只画主射线段（`part = 0`）；false = 只画反弹段（`part >= 1`）
+     */
+    private strokeDashes(layer: Graphics, dashes: DashSegment[], wantMain: boolean, alpha: number): void {
+        const width = GameTuning.aimGuideWidth;
+        const outline = GameTuning.aimGuideOutline;
+
+        /** 攒齐本层所有小段后 stroke 一次（两遍共用：只有 lineWidth / strokeColor 不同） */
+        const strokePath = (): void => {
+            for (let i = 0; i < dashes.length; i++) {
+                const s = dashes[i];
+                if ((s.part === 0) !== wantMain) continue;
+                layer.moveTo(s.x1, s.y1);
+                layer.lineTo(s.x2, s.y2);
+            }
+            layer.stroke();
+        };
+
+        // ① 描边遍：更粗的深色线（比亮线单边宽 outline px）
+        layer.lineWidth = width + 2 * outline;
+        layer.strokeColor = new Color(
+            AIM_GUIDE_OUTLINE.r,
+            AIM_GUIDE_OUTLINE.g,
+            AIM_GUIDE_OUTLINE.b,
+            GameTuning.aimGuideOutlineAlpha
+        );
+        strokePath();
+
+        // ② 亮线遍：正常宽度的半透明白，压在描边中心上
+        layer.lineWidth = width;
+        layer.strokeColor = new Color(255, 255, 255, alpha);
+        strokePath();
     }
 
     /** 玩家（含子节点瞄准浮标）恒在最上层：敌人 / 子弹 / 掉落都是后生成的，兄弟序会盖住玩家 */
