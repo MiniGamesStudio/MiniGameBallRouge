@@ -182,6 +182,35 @@ export function isHittable(enemy: EnemyRuntime): boolean {
         || enemy.state === EnemyState.Diving;
 }
 
+/**
+ * 兜底自动瞄准：在候选里挑「**最近的可命中敌人**」（附录 J）
+ *
+ * 纯函数，不改任何状态；过滤规则与子弹一致（`isHittable` + 血量 > 0），
+ * 所以自动瞄准不会去锁一个「子弹打不到」的敌人。
+ * 距离用**中心距**（不做到矩形的最近点投影）：目标只是给玩家一个大方向，
+ * 而且大怪的占格越大中心越远，中心距能天然偏好近处的小怪，手感更稳。
+ *
+ * @returns 没有可命中敌人时返回 null（调用方应保持上一次瞄准方向）
+ */
+export function pickAutoAimTarget(
+    playerX: number,
+    playerY: number,
+    enemies: readonly EnemyRuntime[]
+): EnemyRuntime | null {
+    let best: EnemyRuntime | null = null;
+    let bestDist = Infinity;
+    for (let i = 0; i < enemies.length; i++) {
+        const enemy = enemies[i];
+        if (!enemy || !isHittable(enemy) || enemy.hp <= 0) continue;
+        const d = distance(playerX, playerY, enemy.x, enemy.y);
+        if (d < bestDist) {
+            bestDist = d;
+            best = enemy;
+        }
+    }
+    return best;
+}
+
 /** 当前视觉缩放：出生 0.6→1、俯冲放大到 1.35 再缩到 0.5 */
 export function enemyVisualScale(enemy: EnemyRuntime): number {
     if (enemy.state === EnemyState.Spawning) {

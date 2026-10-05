@@ -2,8 +2,8 @@
  * BattleView —— 玩法编排层（唯一把「纯逻辑」和「Cocos 节点」粘起来的地方）
  *
  * 职责：
- *   输入（双指：拖玩家 / 拖游标）→ 开火与弹匣账本 → 子弹仿真 → 敌人状态机
- *   → 掉落物与经验 → 升级/天赋三选一 → 波次推进 → HUD 与结算
+ *   输入（操作方案 A：按住玩家 = 走位 / 其它任意处 = 瞄准，双指可同时）→ 开火与弹匣账本
+ *   → 子弹仿真 → 敌人状态机 → 掉落物与经验 → 升级/天赋三选一 → 波次推进 → HUD 与结算
  *
  * 设计约束：
  *   1. 所有数值来自 core/GameTuning（**不要**在这里挂 @property，见策划案 §14.0）；
@@ -31,7 +31,8 @@ import {
     screenBounds,
 } from '../core/BoardMath';
 import { BulletWorld, aimVelocity, createBullet, stepBullet } from '../core/BulletSim';
-import { EnemyWorld, applyStopBlocking, enemyVisualScale, isDead, isHittable, killEnemy, stepEnemy } from '../core/EnemySim';
+import { EnemyWorld, applyStopBlocking, enemyVisualScale, isDead, isHittable, killEnemy, pickAutoAimTarget, stepEnemy } from '../core/EnemySim';
+import { traceAimGuide } from '../core/AimGuide';
 import {
     catchRadiusWithBonus,
     enemyCoinValue,
@@ -75,11 +76,11 @@ import { OverlayHandle, showChoiceOverlay, showMessageOverlay } from './ChoiceOv
 
 const { ccclass } = _decorator;
 
-/** 游标抓取半径（游标外接圆），按下点落在这个范围内就拖游标 */
-const CURSOR_GRAB_RADIUS = 45;
-/** 游标抓取半径：按下点离「屏幕内可见的浮标」≤ 该值、且比离玩家更近 → 抓浮标；否则仍走「拖玩家」 */
-const CURSOR_GRAB_BAND = 90;
-/** 浮标贴屏幕边缘时保留的余量 px（≈半个浮标高度）：保证浮标整体不出屏、随时可抓 */
+/** 游标位置夹取半径（浮标外接圆）：把瞄准点夹在屏幕内，浮标才不会跑出屏 */
+const CURSOR_CLAMP_RADIUS = 45;
+/** 瞄准辅助射线默认反射次数：1 = 主射线 + 首段反弹射线（与真实弹道一致） */
+const AIM_GUIDE_BOUNCE = 1;
+/** 浮标贴屏幕边缘时保留的余量 px（≈半个浮标高度）：保证浮标整体不出屏、随时可见 */
 const CURSOR_FLOAT_EDGE_MARGIN = 48;
 /** 伤害飘字颜色：敌人·普通 / 敌人·暴击 / 玩家·普通 / 玩家·暴击 */
 const DMG_ENEMY = new Color(255, 232, 120, 255);
@@ -211,9 +212,18 @@ export class BattleView extends Component {
     private m_Overlay: OverlayHandle | null = null;
 
     private m_PlayerTouchId: number = -1;
-    private m_CursorTouchId: number = -1;
+    /** 瞄准触摸 id（与 m_PlayerTouchId 相互独立，两根手指可同时生效） */
+    private m_AimTouchId: number = -1;
     private m_PlayerGrabOffset: Vec2 = { x: 0, y: 0 };
-    private m_CursorGrabOffset: Vec2 = { x: 0, y: 0 };
+    /**
+     * 瞄准空闲计时（s）：**只**由瞄准触摸的按下/移动清零（= 手动接管）；
+     * 拖动玩家不清零，所以走位不会打断兜底自动瞄准（附录 J）。
+     */
+    private m_AimIdle: number = 0;
+
+    /** 瞄准辅助射线：主射线（半透明白）与首段反弹段（更淡）；都建在敌人之下（§附录 J） */
+    private m_AimRay: Graphics = null;
+    private m_AimBounceRay: Graphics = null;
 
     private m_HpLabel: Label = null;
     private m_MagazineLabel: Label = null;
@@ -323,6 +333,27 @@ export class BattleView extends Component {
         );
         const orbitLocal = this.cursorOrbitLocal();
         setPos(this.m_CursorNode, orbitLocal.x, orbitLocal.y);
+
+        // 瞄准辅助射线：必须在**任何敌人之前**建好，兄弟序才会是「背景 < 射线 < 敌人 < 飘字」
+        this.createAimGuide();
+    }
+
+    /**
+     * 建瞄准辅助射线的两个绘制层（主射线 / 首段反弹段）。
+     *
+     * 层级：作为 `m_FieldRoot` 的**最早**子节点创建，于是渲染顺序 = 射线 → 敌人 → 子弹/掉落/飘字，
+     * 即**在敌人之下、背景之上**，不会遮挡敌人与飘字（玩家每帧被提到最上也仍然在射线之上）。
+     * 分成两个节点是为了让两段用各自的不透明度 `aimGuideAlpha` / `aimGuideBounceAlpha`。
+     */
+    private createAimGuide(): void {
+        this.m_AimRay = this.makeAimGuideLayer('AimRay');
+        this.m_AimBounceRay = this.makeAimGuideLayer('AimBounceRay');
+    }
+
+    private makeAimGuideLayer(name: string): Graphics {
+        const node = makeNode(this.m_FieldRoot, name);
+        node.addComponent(UITransform);
+        return node.addComponent(Graphics);
     }
 
     private createHud(): void {
@@ -394,6 +425,9 @@ export class BattleView extends Component {
         this.updateFiring(d);
         this.updateSpawning(d);
         this.updateEnemies(d);
+        // 瞄准（兜底自动瞄准 + 浮标贴外围圆 + 辅助射线）放在敌人之后：
+        // 用的是本帧最新的敌人位置，射线与真实弹道才对得上
+        this.updateAim(d);
         this.m_PlayerFeedback?.update(d, this.m_PlayerX, this.m_PlayerY);
         this.updateBullets(d);
         this.updateDrops(d);
@@ -407,17 +441,12 @@ export class BattleView extends Component {
         return this.m_OverlayPaused || this.m_ExternalPaused;
     }
 
-    /** 按下点是否算「抓住瞄准浮标」：以玩家为圆心、半径 R 的圆环附近（径向 ±CURSOR_GRAB_BAND、夹角 ≤ CURSOR_GRAB_ANGLE）
-     *  浮标停在圆环哪一段就能抓哪一段，拖过一次后随时还能再抓住；按在玩家身上或别处仍走「拖玩家」 */
-    private isPressOnCursor(x: number, y: number): boolean {
-        const orbit = this.cursorOrbitLocal();
-        const dc = distance(x, y, this.m_PlayerX + orbit.x, this.m_PlayerY + orbit.y);
-        if (dc > CURSOR_GRAB_BAND) return false;
-        const dp = distance(x, y, this.m_PlayerX, this.m_PlayerY);
-        return dc <= dp;
-    }
-
-    /** 浮标在玩家外围圆上的**局部**偏移：方向 = 玩家 → 瞄准点，半径固定 */
+    /**
+     * 浮标在玩家外围圆上的**局部**偏移：方向 = 玩家 → 瞄准点，半径固定。
+     *
+     * 浮标已**降级为纯方向标识**（不可拖动，操作方案 A），所以这里只负责"贴在玩家外围圆上"
+     * 与"玩家贴近屏幕边缘时压回屏内"两件事，不再参与任何抓取判定。
+     */
     private cursorOrbitLocal(): { x: number; y: number } {
         const dx = this.m_CursorX - this.m_PlayerX;
         const dy = this.m_CursorY - this.m_PlayerY;
@@ -429,12 +458,96 @@ export class BattleView extends Component {
             ox = (dx / len) * r;
             oy = (dy / len) * r;
         }
-        // 玩家贴近屏幕边缘时把浮标压回屏幕内：保证任何位置都看得见、抓得到（需求）
+        // 玩家贴近屏幕边缘时把浮标压回屏幕内：保证任何位置都看得见（需求）
         const bounds = screenBounds();
         const m = CURSOR_FLOAT_EDGE_MARGIN;
         const wx = Math.min(Math.max(this.m_PlayerX + ox, bounds.left + m), bounds.right - m);
         const wy = Math.min(Math.max(this.m_PlayerY + oy, bounds.bottom + m), bounds.top - m);
         return { x: wx - this.m_PlayerX, y: wy - this.m_PlayerY };
+    }
+
+    /** 浮标贴到玩家外围圆上（浮标是玩家子节点，给局部坐标即可） */
+    private syncCursorNode(): void {
+        if (!this.m_CursorNode || !this.m_CursorNode.isValid) return;
+        const orbit = this.cursorOrbitLocal();
+        setPos(this.m_CursorNode, orbit.x, orbit.y);
+    }
+
+    /**
+     * 设置瞄准点并**手动接管**：夹进屏幕内、立即生效，并把自动瞄准空闲计时清零。
+     * 只有瞄准触摸（按下 / 移动）会走这里 —— 拖动玩家不走，所以走位不打断自动瞄准。
+     */
+    private setAimTarget(x: number, y: number): void {
+        const next = clampCursorPosition(x, y, CURSOR_CLAMP_RADIUS);
+        this.m_CursorX = next.x;
+        this.m_CursorY = next.y;
+        this.m_AimIdle = 0;
+        this.syncCursorNode();
+    }
+
+    /**
+     * 每帧的瞄准更新：兜底自动瞄准 → 浮标贴圆 → 画辅助射线。
+     *
+     * 兜底自动瞄准（附录 J）：空闲计时只被瞄准触摸清零，累加到 `autoAimDelay` 秒后
+     * 每帧把瞄准点设为 `pickAutoAimTarget` 选出的**最近可命中敌人**；
+     * 没有可命中敌人时**保持上一次方向**（不重置、也不清屏）。
+     */
+    private updateAim(d: number): void {
+        this.m_AimIdle += d;
+
+        const delay = GameTuning.autoAimDelay;
+        if (delay > 0 && this.m_AimIdle >= delay) {
+            const target = pickAutoAimTarget(this.m_PlayerX, this.m_PlayerY, this.m_Enemies);
+            if (target) {
+                const next = clampCursorPosition(target.x, target.y, CURSOR_CLAMP_RADIUS);
+                this.m_CursorX = next.x;
+                this.m_CursorY = next.y;
+            }
+        }
+
+        this.syncCursorNode();
+        this.drawAimGuide();
+    }
+
+    /**
+     * 画瞄准辅助射线：主射线（玩家中心 → 第一次与墙相交）+ 首段反弹段（真实反射方向续画）。
+     *
+     * 顶点全部来自 core 纯函数 `traceAimGuide`，它与 `BulletSim` 共用同一套边界与反射实现，
+     * 所以画出来的折线就是真实子弹的前两段弹道（底墙不反射：子弹在那里转入回身，射线到此为止）。
+     */
+    private drawAimGuide(): void {
+        const ray = this.m_AimRay;
+        const bounce = this.m_AimBounceRay;
+        if (!ray || !ray.isValid || !bounce || !bounce.isValid) return;
+
+        ray.clear();
+        bounce.clear();
+        if (!GameTuning.aimGuideEnabled) return;
+
+        const verts = traceAimGuide(
+            this.m_PlayerX,
+            this.m_PlayerY,
+            this.m_CursorX - this.m_PlayerX,
+            this.m_CursorY - this.m_PlayerY,
+            AIM_GUIDE_BOUNCE
+        );
+        if (verts.length < 2) return; // 退化方向（瞄准点与玩家重合）：不画
+
+        const width = GameTuning.aimGuideWidth;
+        ray.lineWidth = width;
+        ray.strokeColor = new Color(255, 255, 255, GameTuning.aimGuideAlpha);
+        ray.moveTo(verts[0].x, verts[0].y);
+        ray.lineTo(verts[1].x, verts[1].y);
+        ray.stroke();
+
+        // 首段反弹：从第一次相交点按真实反射方向续画（顶点可能多于 2 段，全部按更淡的画）
+        if (verts.length >= 3) {
+            bounce.lineWidth = width;
+            bounce.strokeColor = new Color(255, 255, 255, GameTuning.aimGuideBounceAlpha);
+            bounce.moveTo(verts[1].x, verts[1].y);
+            for (let i = 2; i < verts.length; i++) bounce.lineTo(verts[i].x, verts[i].y);
+            bounce.stroke();
+        }
     }
 
     /** 玩家（含子节点瞄准浮标）恒在最上层：敌人 / 子弹 / 掉落都是后生成的，兄弟序会盖住玩家 */
@@ -999,32 +1112,34 @@ export class BattleView extends Component {
 
     // ─────────── 输入 ───────────
 
+    /**
+     * 操作方案 A（附录 J）：按下点到**玩家中心**的距离 `d` 决定这根手指干什么 ——
+     *
+     * · `d <= playerGrabRadius` → **移动玩家**（沿用相对偏移手感：`offset = 玩家位置 − 按下点`，
+     *   移动时 `clampPlayerPosition(触摸点 + offset)`，点哪里都不会瞬移），**且不动瞄准方向**；
+     * · 否则 → **瞄准**：立即把瞄准点设为按下点（点一下即调方向）并清零自动瞄准空闲计时。
+     *
+     * 两根手指用**独立 id**，互不抢占：玩家触摸只走移动分支、瞄准触摸只走瞄准分支，
+     * 于是「一手按住玩家走位、一手在任意处调角度」可以同时生效。
+     * 目标已被同类手指占用时**忽略**这根新手指（不降级成另一种操作）——
+     * 否则「已经有一根手指在走位时，第二根手指按在玩家身上」会变成改瞄准方向，违反方案 A。
+     */
     private onTouchStart(event: EventTouch): void {
         if (this.isPaused() || this.m_Finished) return;
         const local = this.toLocal(event);
         const touchId = event.getID();
-        const orbit = this.cursorOrbitLocal();
-        const onCursor = this.isPressOnCursor(local.x, local.y);
+        const onPlayer = distance(local.x, local.y, this.m_PlayerX, this.m_PlayerY) <= GameTuning.playerGrabRadius;
 
-        // 落在游标上 → 拖游标；否则拖玩家（§4：点哪里都不会瞬移，用按下瞬间的偏移量）
-        if (onCursor && this.m_CursorTouchId < 0) {
-            this.m_CursorTouchId = touchId;
-            this.m_CursorGrabOffset = { x: this.m_PlayerX + orbit.x - local.x, y: this.m_PlayerY + orbit.y - local.y };
-            return;
-        }
-        if (!onCursor && this.m_PlayerTouchId < 0) {
+        if (onPlayer) {
+            if (this.m_PlayerTouchId >= 0) return;
             this.m_PlayerTouchId = touchId;
             this.m_PlayerGrabOffset = { x: this.m_PlayerX - local.x, y: this.m_PlayerY - local.y };
             return;
         }
-        // 兜底：目标已被占用就分配给另一个（双指同操）
-        if (this.m_CursorTouchId < 0) {
-            this.m_CursorTouchId = touchId;
-            this.m_CursorGrabOffset = { x: 0, y: 0 };
-        } else if (this.m_PlayerTouchId < 0) {
-            this.m_PlayerTouchId = touchId;
-            this.m_PlayerGrabOffset = { x: 0, y: 0 };
-        }
+
+        if (this.m_AimTouchId >= 0) return;
+        this.m_AimTouchId = touchId;
+        this.setAimTarget(local.x, local.y);
     }
 
     private onTouchMove(event: EventTouch): void {
@@ -1032,6 +1147,7 @@ export class BattleView extends Component {
         const touchId = event.getID();
         const local = this.toLocal(event);
 
+        // 玩家触摸：只移动，绝不碰瞄准点（拖动玩家不取消自动瞄准）
         if (touchId === this.m_PlayerTouchId) {
             const next = clampPlayerPosition(
                 local.x + this.m_PlayerGrabOffset.x,
@@ -1044,23 +1160,15 @@ export class BattleView extends Component {
             return;
         }
 
-        if (touchId === this.m_CursorTouchId) {
-            const next = clampCursorPosition(
-                local.x + this.m_CursorGrabOffset.x,
-                local.y + this.m_CursorGrabOffset.y,
-                CURSOR_GRAB_RADIUS
-            );
-            this.m_CursorX = next.x;
-            this.m_CursorY = next.y;
-            const orbitLocal = this.cursorOrbitLocal();
-        setPos(this.m_CursorNode, orbitLocal.x, orbitLocal.y);
-        }
+        // 瞄准触摸：改方向 + 重新计时（手动接管）
+        if (touchId === this.m_AimTouchId) this.setAimTarget(local.x, local.y);
     }
 
+    /** 抬手：各自只清自己的 id，另一根手指完全不受影响（未登记的手指到这里自然什么都不做） */
     private onTouchEnd(event: EventTouch): void {
         const touchId = event.getID();
         if (touchId === this.m_PlayerTouchId) this.m_PlayerTouchId = -1;
-        if (touchId === this.m_CursorTouchId) this.m_CursorTouchId = -1;
+        if (touchId === this.m_AimTouchId) this.m_AimTouchId = -1;
     }
 
     /** 屏幕坐标 → 本节点局部坐标（自动处理面板根节点的缩放） */

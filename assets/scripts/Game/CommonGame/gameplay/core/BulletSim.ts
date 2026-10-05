@@ -12,10 +12,16 @@
 
 import { BulletRuntime, BulletState, EnemyRuntime } from './GameTypes';
 import { GameTuning } from './GameTuning';
-import { BoxHit, boxFromCells, circleBoxHit, distance, screenBounds } from './BoardMath';
+import { BoxHit, ScreenBounds, boxFromCells, circleBoxHit, distance, screenBounds } from './BoardMath';
 
 /** 接触判定的额外容差：贴边时不反复进出接触窗口，避免重复扣血 */
 const CONTACT_EPSILON = 1;
+
+/**
+ * 参与「镜面反射」的边界：顶 / 左 / 右墙。
+ * 底墙是唯一例外——它不反射，而是让子弹转入回身（§6.3 铁律 2），所以不在这组里。
+ */
+export type WallBounds = Pick<ScreenBounds, 'left' | 'right' | 'top'>;
 
 /** 仿真需要的外部世界信息 */
 export interface BulletWorld {
@@ -130,7 +136,7 @@ export function stepBullet(bullet: BulletRuntime, dt: number, world: BulletWorld
 
         if (bullet.state === BulletState.Flying) {
             // (1) 底墙（玩家身后）：不反射，转入回身
-            if (bullet.y - radius <= bounds.bottom) {
+            if (hitsBottomWall(bullet.y, radius, bounds)) {
                 bullet.y = bounds.bottom + radius;
                 enterReturning(bullet, world, result);
             }
@@ -177,23 +183,61 @@ function aimAtPlayer(bullet: BulletRuntime, world: BulletWorld): void {
     bullet.vy = dir.vy;
 }
 
-/** 顶 / 左 / 右墙镜面反射（底墙不在这里处理） */
-function bounceWalls(
-    bullet: BulletRuntime,
-    bounds: { left: number; right: number; top: number },
-    radius: number
-): void {
-    if (bullet.x - radius <= bounds.left) {
-        bullet.x = bounds.left + radius;
-        bullet.vx = Math.abs(bullet.vx);
-    } else if (bullet.x + radius >= bounds.right) {
-        bullet.x = bounds.right - radius;
-        bullet.vx = -Math.abs(bullet.vx);
+/** 顶 / 左 / 右墙镜面反射（底墙不在这里处理） —— 直接改子弹 */
+function bounceWalls(bullet: BulletRuntime, bounds: WallBounds, radius: number): void {
+    const next = reflectOffWalls(bullet.x, bullet.y, bullet.vx, bullet.vy, radius, bounds);
+    bullet.x = next.x;
+    bullet.y = next.y;
+    bullet.vx = next.vx;
+    bullet.vy = next.vy;
+}
+
+/**
+ * 顶 / 左 / 右墙的**标准镜面反射**：把圆心推回墙内侧，并翻转对应轴的速度分量。
+ *
+ * ⚠️ 这是全工程**唯一**的墙体反射实现：子弹仿真（`stepBullet`）与瞄准辅助射线
+ * （`AimGuide.traceAimGuide`）都调它，保证「辅助射线」与「真实弹道」不会各写一套规则后慢慢跑偏。
+ *
+ * 反射规则（§6.2）：左墙 → `vx = +|vx|`、右墙 → `vx = -|vx|`、顶墙 → `vy = -|vy|`；
+ * 入射角 = 反射角（法线沿轴，所以只需翻转该轴分量，另一轴分量保持不变）。
+ * 撞到角落（同一子步同时贴到左/右墙与顶墙）时两个分量一起翻转，与 `stepBullet` 的子步行为一致。
+ *
+ * @returns 反射后的位置与速度（不修改入参，纯函数）
+ */
+export function reflectOffWalls(
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+    radius: number,
+    bounds: WallBounds
+): { x: number; y: number; vx: number; vy: number } {
+    let nx = x;
+    let ny = y;
+    let nvx = vx;
+    let nvy = vy;
+
+    if (nx - radius <= bounds.left) {
+        nx = bounds.left + radius;
+        nvx = Math.abs(nvx);
+    } else if (nx + radius >= bounds.right) {
+        nx = bounds.right - radius;
+        nvx = -Math.abs(nvx);
     }
-    if (bullet.y + radius >= bounds.top) {
-        bullet.y = bounds.top - radius;
-        bullet.vy = -Math.abs(bullet.vy);
+    if (ny + radius >= bounds.top) {
+        ny = bounds.top - radius;
+        nvy = -Math.abs(nvy);
     }
+    return { x: nx, y: ny, vx: nvx, vy: nvy };
+}
+
+/**
+ * 是否撞到底墙（回身线）：`圆心 y − 半径 ≤ 底边`。
+ * 底墙**不反射**——真实子弹在这里转入回身直飞玩家（§6.3 铁律 2），
+ * 所以瞄准辅助射线画到这里就结束，不假装它会弹回来。同样由仿真与射线共用。
+ */
+export function hitsBottomWall(y: number, radius: number, bounds: Pick<ScreenBounds, 'bottom'>): boolean {
+    return y - radius <= bounds.bottom;
 }
 
 /** 敌人命中：最浅穿透轴弹开 + 接触窗口去重 */
