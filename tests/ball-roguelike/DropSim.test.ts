@@ -1,5 +1,5 @@
 /**
- * L1 单测：掉落物接入**滚动世界**（v1.10）+ **v1.10 修订口径**（只有吸收范围才结算 / 屏幕底 −30 才消失 / 绝不上升）
+ * L1 单测：掉落物接入**滚动世界**（v1.10）+ **v1.10 修订口径**（只有吸收范围才结算 / 屏幕底 −30 才消失 / 磁吸可向上）
  *
  * 对应策划案 §11.1（散落）、§11.3（拾取与消失）、§24.5（数值）、§24.8 与**附录 K-4 / K-8**。
  * 全部是纯逻辑（不依赖 cc），被测对象是 core/DropSim.ts + core/ScrollWorld.ts + core/EnemySim.ts。
@@ -564,8 +564,8 @@ describe('俯冲线不再是收取线（v1.10 修订：越线继续向下，直�
     it('旧开关 `dropAutoCollectAtDiveLine` 已从真源**删除**（不存在任何"越线收取"）', () => {
         expect('dropAutoCollectAtDiveLine' in GameTuning).toBe(false);
         expect('dropAutoCollectOnTimeout' in GameTuning).toBe(false);
-        // 替代它的两条新口径（见 §24.8 / K-4）
-        expect(GameTuning.dropNeverMovesUp).toBe(true);
+        // 替代它的新口径（见 §24.8 / K-4）：出屏线 + **磁吸可向上**（v1.10 修订**已删除** `dropNeverMovesUp` 夹取）
+        expect('dropNeverMovesUp' in GameTuning).toBe(false);
         expect(GameTuning.dropDespawnBelowScreen).toBe(30);
 
         // 越线之后还会继续往下走很远才消失（旧口径下这里早就被"收"走了）
@@ -791,81 +791,134 @@ describe('寿命（life）：**不参与生死**（耗尽既不结算、也不�
     });
 });
 
-describe('绝不向上移动：单调不上升夹取（玩家在掉落物上方时磁吸只能横向靠拢）', () => {
-    it('玩家在掉落物**正上方** + 世界暂停：逐帧 y **分毫不动**、x 每帧朝玩家靠拢', () => {
-        const playerY = 760; // 玩家在掉落物**上方**
+/**
+ * v1.10 修订：**撤销"绝不向上"夹取**（旧键 `dropNeverMovesUp` 已从 `GameTuning` **删除**）。
+ *
+ * 理由（线上 bug 的根因）：世界滚动**只把掉落物往下推**（② 的位移恒为非负）→ 去掉夹取后，
+ * **唯一**能让掉落物向上移动的就是**磁吸** —— 这正是"玩家在掉落物**上方**时也能被吸走并吸收"所必需的。
+ * 旧的单调夹取把磁吸的**纵向分量按回原地** → 掉落物只剩横向分量 → 永远追在玩家后面、
+ * **进不了** `pickupRadius` → 现象正是"玩家在掉落物上方时只跟随、不吸收"。
+ *
+ * ⚠️ 本组第一条用例就是该 bug 的**复现用例**：在**旧代码**（夹取还在）上**必然失败**，修复后必然通过。
+ */
+describe('磁吸可向上（v1.10 修订：撤销"绝不向上"夹取 → 玩家在掉落物上方也能被吸收）', () => {
+    it('玩家在掉落物**正上方** + 世界暂停：磁吸把它**向上**吸走 → 进 pickupRadius → Collected **恰好 1 次**（旧代码必失败）', () => {
+        const playerY = 760; // 玩家在掉落物**上方** 160px
         const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, playerX: 0, playerY, scrollDelta: 0 });
-        const drop = makeDrop(81, 100, 600); // 与玩家距离 ≈ 172 ≤ 192 → 一进来就吸附
-        const y0 = drop.y;
-        let prevX = drop.x;
-
-        for (let i = 0; i < 120; i++) {
-            expect(stepDrop(drop, DT, world)).toBe(DropOutcome.Alive);
-            expect(drop.y).toBe(y0); // ① **绝不上升**：向上的分量被整条夹掉（连"不动"都是精确相等）
-            expect(drop.x).toBeLessThan(prevX); // ② 横向**照常**被吸（每帧都在靠拢）
-            prevX = drop.x;
-        }
-        expect(drop.magnetized).toBe(true);
-        expect(drop.x).toBeLessThan(50); // 确实飞了很远（不是"磁吸没生效"的假通过）
-
-        // ③ 证伪：关掉夹取 → **同一场景确实会上升**（证明这条用例真的在测夹取，而不是别的机制）
-        const original = GameTuning.dropNeverMovesUp;
-        try {
-            GameTuning.dropNeverMovesUp = false;
-            const free = makeDrop(82, 100, 600);
-            stepDrop(free, DT, world);
-            expect(free.y).toBeGreaterThan(y0); // 被磁吸抬起来了
-            expect(free.x).toBeLessThan(100); // 横向照样被吸
-        } finally {
-            GameTuning.dropNeverMovesUp = original; // 必须还原，否则污染后续用例
-        }
-        expect(GameTuning.dropNeverMovesUp).toBe(true); // 已还原
-    });
-
-    it('世界滚动 + 玩家在上方：y **单调不增**，且净位移**绝不大于**滚动量（上抬分量被夹掉、也不额外加速）', () => {
-        const playerY = 760; // 玩家在掉落物**上方**（磁吸一直想把掉落物往上拽）
-        const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, playerX: 0, playerY });
-        const drop = makeDrop(83, 100, 600);
-        const control = makeDrop(86, 100, 600); // 对照组：同一位置但**关掉磁吸**
-        const controlWorld = makeWorld({ magnetRadius: 0, playerX: 0, playerY });
+        const drop = makeDrop(81, 100, 600); // 距离 ≈ 188.7 ≤ 192 → 一进来就吸附
         const y0 = drop.y;
         let prevY = drop.y;
+        let prevX = drop.x;
+        let roseFrames = 0; // "y 变大"的帧数 —— 这正是旧口径**绝不允许**的事
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
 
-        for (let i = 0; i < 200; i++) {
-            world.scrollDelta = DELTA;
-            controlWorld.scrollDelta = DELTA;
+        let collectedAt = -1;
+        for (let i = 0; i < 120; i++) {
             const outcome = stepDrop(drop, DT, world);
-            stepDrop(control, DT, controlWorld);
-            expect(drop.y).toBeLessThanOrEqual(prevY); // ① 逐帧单调不增（**本轮最关键的一条**）
-            // ② 净向下位移 ∈ [0, 滚动量]：磁吸的上抬**既不产生高度**，也不会额外加速
-            expect(prevY - drop.y).toBeGreaterThanOrEqual(0);
-            expect(prevY - drop.y).toBeLessThanOrEqual(DELTA + 1e-9);
+            if (outcome === DropOutcome.Collected) {
+                collectLikeView(stats, ledger, drop); // ← 唯一结算入口（与 BattleView.collectDrop() 同口径）
+                collectedAt = i;
+                break;
+            }
+            expect(outcome).toBe(DropOutcome.Alive);
+            expect(drop.y).toBeGreaterThan(prevY); // ① 逐帧 y **变大** = "单调不增"被打破（旧口径下这里是 y === y0）
+            expect(drop.x).toBeLessThan(prevX); // ② 横向**同时**靠拢
+            roseFrames++;
             prevY = drop.y;
-            expect([DropOutcome.Alive, DropOutcome.Fell]).toContain(outcome); // 既不结算也不消失
+            prevX = drop.x;
         }
 
-        // ③ 对照：关掉磁吸的那颗严格按滚动量下移满 200 帧；开着磁吸的这颗**一帧都没能下去**
-        //    （磁吸的上抬 > 滚动量 → 被夹在 y0：它比对照组**高**，但**从未高于起点**）
-        expect(control.y).toBeCloseTo(600 - 200 * DELTA, 6);
-        expect(drop.y).toBeCloseTo(y0, 9);
-        expect(drop.y).toBeGreaterThan(control.y);
-        expect(drop.y).toBeLessThanOrEqual(y0); // 再强调一次：一帧都没上升过
+        // ③ 确实**连续多帧向上**飞了（不是"没吸附"或"只动了一帧"的假通过）
+        expect(roseFrames).toBeGreaterThan(2);
+        expect(drop.y).toBeGreaterThan(y0); // 净上升
         expect(drop.magnetized).toBe(true);
-        expect(drop.x).toBeLessThan(50); // 横向仍一路被吸到玩家那一列
+        expect(drop.x).toBeLessThan(100); // x 也一路靠拢
+        // ④ 最终**进了吸收范围** → 结算**恰好一次**：旧代码里 y 被钉在 y0 → 距离恒 ≥ 160 > 38 → 永远吸不到
+        expect(collectedAt).toBeGreaterThan(0);
+        expect(settleCalls).toBe(1);
+        expect(ledger.exp).toBeGreaterThan(0); // 经验真的进账了
+        expect(drop.collected).toBe(true);
+        // ⑤ ⓪ 已结算闸门：吸收过的掉落物留在场上也不再被推进 / 不再结算
+        expect(stepDrop(drop, DT, world)).toBe(DropOutcome.Alive);
+        expect(settleCalls).toBe(1);
     });
 
-    it('玩家在掉落物**下方**（正常的向下磁吸）**不受夹取影响**：位移仍 = 滚动 + 磁吸', () => {
+    it('玩家在掉落物**斜上方**（既有上、又有横向偏移）：斜向上被吸走 → 最终吸收（边界）', () => {
+        const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, playerX: 140, playerY: 700, scrollDelta: 0 });
+        const drop = makeDrop(87, 100, 600); // 玩家在**右上方**：dx = +40、dy = +100（距离 ≈ 107.7 ≤ 192）
+        const y0 = drop.y;
+        let prevY = drop.y;
+        let prevX = drop.x;
+        let roseFrames = 0;
+        const stats = createRunStats();
+        const ledger = emptyLedger();
+        settleCalls = 0;
+
+        let collectedAt = -1;
+        for (let i = 0; i < 120; i++) {
+            const outcome = stepDrop(drop, DT, world);
+            if (outcome === DropOutcome.Collected) {
+                collectLikeView(stats, ledger, drop); // ← 唯一结算入口
+                collectedAt = i;
+                break;
+            }
+            expect(outcome).toBe(DropOutcome.Alive);
+            expect(drop.y).toBeGreaterThan(prevY); // ① 向上的分量照样生效（斜向上）
+            expect(drop.x).toBeGreaterThan(prevX); // ② 横向朝玩家（右）靠拢
+            roseFrames++;
+            prevY = drop.y;
+            prevX = drop.x;
+        }
+
+        expect(roseFrames).toBeGreaterThan(2);
+        expect(drop.y).toBeGreaterThan(y0); // 净上升
+        expect(drop.x).toBeGreaterThan(100); // 净右移
+        expect(collectedAt).toBeGreaterThan(0);
+        expect(settleCalls).toBe(1); // 结算恰好 1 次
+        expect(drop.collected).toBe(true);
+    });
+
+    it('世界滚动本身**只向下**：关掉磁吸 → 逐帧 y **严格单调不增**、每帧位移恰为滚动量', () => {
+        const worlds: DropWorld[] = [
+            makeWorld({ magnetRadius: 0, playerX: 0, playerY: 760 }), // ① 直接把磁吸半径设为 0
+            makeWorld({ magnetRadius: GameTuning.magnetRadius, playerX: 5000, playerY: 760 }), // ② 玩家极远（真源半径也吸不到）
+        ];
+
+        for (const world of worlds) {
+            const drop = makeDrop(83, 100, 600);
+            const y0 = drop.y;
+            let prevY = drop.y;
+            let frames = 0;
+
+            for (let i = 0; i < 200; i++) {
+                world.scrollDelta = DELTA;
+                const outcome = stepDrop(drop, DT, world);
+                expect([DropOutcome.Alive, DropOutcome.Fell]).toContain(outcome); // 既不结算也不消失
+                expect(drop.y).toBeLessThanOrEqual(prevY); // ① **严格单调不增**：世界滚动只会往下推
+                expect(prevY - drop.y).toBeCloseTo(DELTA, 9); // ② 每帧位移**恰为**滚动量（不额外加速）
+                prevY = drop.y;
+                frames++;
+            }
+
+            expect(drop.magnetized).toBe(false); // 磁吸确实关着（"只向下"不是因为磁吸恰好没生效）
+            expect(drop.y).toBeCloseTo(y0 - frames * DELTA, 6); // 净位移 = 累积滚动量
+        }
+    });
+
+    it('玩家在掉落物**下方**（向下磁吸）：位移仍 = 滚动 + 磁吸（新口径不改变"向下"这一侧）', () => {
         const MAGNET = GameTuning.magnetRadius;
         const d0 = 150; // 玩家在掉落物**正下方** 150px
         const magnetStep = GameTuning.magnetSpeed * DT;
 
-        // ① 只有磁吸（世界暂停）：位移仍是完整的 magnetStep（夹取没有削弱"向下"的磁吸）
+        // ① 只有磁吸（世界暂停）：位移仍是完整的 magnetStep
         const a = makeDrop(84, 0, PLAYER_Y + d0);
         stepDrop(a, DT, makeWorld({ magnetRadius: MAGNET, scrollDelta: 0 }));
         expect(a.y - (PLAYER_Y + d0)).toBeCloseTo(-magnetStep, 9);
-        expect(Math.abs(a.y - (PLAYER_Y + d0))).toBeGreaterThan(1); // 非 0（反证：夹取不是"限制所有磁吸"）
+        expect(Math.abs(a.y - (PLAYER_Y + d0))).toBeGreaterThan(1); // 非 0（反证：磁吸确实生效了）
 
-        // ② 滚动 + 磁吸：与"叠加"口径完全一致（夹取对向下的位移是恒等变换）
+        // ② 滚动 + 磁吸：与"叠加"口径完全一致（方向口径对向下的位移是恒等变换）
         const c = makeDrop(85, 0, PLAYER_Y + d0);
         stepDrop(c, DT, makeWorld({ magnetRadius: MAGNET, scrollDelta: DELTA }));
         expect(c.y - (PLAYER_Y + d0)).toBeCloseTo(-(DELTA + magnetStep), 9);
@@ -1097,11 +1150,11 @@ describe('编译期契约：两个仿真世界共用同一个必填的 scrollDel
         expect(enemyY0 - enemy.y).toBeCloseTo(dropY0 - drop.y, 12); // 一位不差
     });
 
-    it('掉落实源：`dropNeverMovesUp` = true、`dropDespawnBelowScreen` = 30，两个"自动收取"开关**已删除**', () => {
-        expect(GameTuning.dropNeverMovesUp).toBe(true);
-        expect(typeof GameTuning.dropNeverMovesUp).toBe('boolean');
+    it('掉落实源：`dropDespawnBelowScreen` = 30；`dropNeverMovesUp` 与两个"自动收取"开关**都已删除**', () => {
         expect(GameTuning.dropDespawnBelowScreen).toBe(30);
         expect(typeof GameTuning.dropDespawnBelowScreen).toBe('number');
+        // v1.10 修订：撤销"绝不向上"夹取（磁吸允许向上 → 玩家在上方也能吸收）→ 该键**整体删除**
+        expect('dropNeverMovesUp' in GameTuning).toBe(false);
         expect('dropAutoCollectAtDiveLine' in GameTuning).toBe(false);
         expect('dropAutoCollectOnTimeout' in GameTuning).toBe(false);
 

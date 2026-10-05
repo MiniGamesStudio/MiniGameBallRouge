@@ -262,10 +262,6 @@ export const GameTuning = {
      * 消失用 DropOutcome.Fell → 玩法层**只销毁节点、绝不结算**；⚠️ 这是**唯一的消失路径**（drop.life 已不参与生死）。
      */
     dropDespawnBelowScreen: 30,
-    /** **绝不向上移动**（单调不上升夹取，默认开启）：位移全部算完后把 y 夹到「<= 进入本帧时的 y」（水平方向不限）。
-     * 世界只向下滚 → 掉落物只应向下；副作用正是需求要的：玩家在掉落物**上方**时磁吸只能**横向**靠拢、抬不起来。
-     */
-    dropNeverMovesUp: true,
     /** 世界暂停（任一敌人被停住）时是否冻结存活计时（true = 冻结；磁吸不受影响、照常生效）。⚠️ life 已不参与生死判定，本项只影响这个计数值 */
     dropLifePausesWithWorld: true,
     /** 升级所需经验：need(n) = 8 + 6(n-1) + 1.5(n-1)^2 */

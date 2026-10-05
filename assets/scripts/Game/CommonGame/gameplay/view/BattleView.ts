@@ -1598,7 +1598,7 @@ export class BattleView extends Component {
      * 结算只有**一条**路径：`stepDrop()` 返回 `Collected` = **进入玩家吸收范围**（磁吸只负责把它送进来），
      * → 一律走既有的 `collectDrop()`；`Fell`（越过屏幕底边再往下 `dropDespawnBelowScreen` = 30 px）**只销毁节点、绝不结算**（§11.3）。
      *
-     * **绝不向上移动**（`dropNeverMovesUp`）：位移算完后单调夹取（本帧 y 不得大于进入时的 y）→ 玩家在掉落物上方时磁吸只能横向靠拢。
+     * **磁吸方向不受限**（`dropNeverMovesUp`）：位移算完后单调夹取（本帧 y 不得大于进入时的 y）→ 玩家在掉落物上方时磁吸只能横向靠拢。
      */
     private updateDrops(d: number): void {
         // 与 updateEnemies() 完全对称：每帧把最新的玩家位置与**同一个**世界滚动位移写进仿真世界

@@ -8,14 +8,16 @@
  *   ② **磁吸是玩家侧行为，叠加在滚动之上**：`stepDrop()` 里顺序写死「先滚动、再磁吸」，
  *      两者都是**位移**、谁也不覆盖谁 —— 所以「世界暂停时磁吸照常」自然成立
  *      （与"俯冲 Diving 不受世界暂停影响"的既有边界口径一致，见策划案附录 K-3）；
- *   ③ **绝不向上移动**（`dropNeverMovesUp`）：位移全部算完、判定**之前**做**单调夹取**
- *      （本帧结束的 `y` 不得大于进入本帧时的 `y0`）—— 世界只会向下滚，掉落物就只应该向下；
- *      水平方向**不受限制**（横向被吸是允许的）。玩家在掉落物**上方**时，磁吸只能横向靠拢、抬不起它；
+ *   ③ **磁吸方向不受限**（v1.10 修订：**撤销"绝不向上"夹取**）：世界滚动**只把掉落物往下推**
+ *      （② 的位移恒为非负），所以去掉夹取后，**唯一能让掉落物向上移动的就是磁吸** ——
+ *      这正是"玩家在掉落物**上方**时也能被吸走并吸收"所必需的。旧的 `dropNeverMovesUp`
+ *      **单调夹取**会把磁吸的**纵向分量按回原地**（玩家在上方 → 磁吸向上 → 被夹 → 只剩横向分量）
+ *      → 掉落物**永远追在玩家后面**、进不了 `pickupRadius`（线上 bug：只跟随、不吸收）→ 已**整体删除**；
  *   ④ **已结算闸门**（`drop.collected`）：`Collected` 时**立刻置位**，此后**永不再产生收益**
  *      （`stepDrop()` 每帧开头第一件事就是读它 → 直接 `Alive`，不再滚动 / 磁吸 / 判定）——
  *      即使调用方**忘了把它移出场**（曾经的线上 bug：吸收后漏了移除 → 每帧重复结算 → 经验一直涨），
  *      同一个掉落物也**只结算一次**。⚠️ `Fell`（出屏消失）**不置位**：它本来就不产生收益，
- *      置位反而会**掩盖**"该消失却没消失"的簿记错误（见 ⑦ 的注释）。
+ *      置位反而会**掩盖**"该消失却没消失"的簿记错误（见 ⑤ 的注释）。
  *
  * 结算与消失（v1.10 修订，**严格分开**，见 `DropOutcome`）：
  *   · **唯一收益路径 = 进入玩家吸收范围**（`distance(drop, player) <= world.pickupRadius`）→ `Collected`
@@ -76,18 +78,18 @@ export interface DropWorld extends WorldScrollConsumer {
 /**
  * 推进一个掉落物一帧（原地修改 `drop`），返回本帧处置结果。
  *
- * **顺序写死**（这就是"磁吸不被滚动覆盖"与"绝不上升"的保证）：
- *   ⓪ **已结算闸门**（`drop.collected`）→ 直接返回 `Alive`（②~⑦ 一概不做：不滚动、不磁吸、不计时、不判定）；
- *   ① 记下进入本帧时的 `y0`（⑤ 单调夹取的基准，**必须在任何位移之前**取）；
- *   ② 存活计时（与世界滚动无关：**世界暂停时冻结**（`dropLifePausesWithWorld` 且 `scrollDelta === 0` 时不扣 life；
+ * **顺序写死**（这就是"磁吸不被滚动覆盖"的保证）：
+ *   ⓪ **已结算闸门**（`drop.collected`）→ 直接返回 `Alive`（①~⑤ 一概不做：不滚动、不磁吸、不计时、不判定）；
+ *   ① 存活计时（与世界滚动无关：**世界暂停时冻结**（`dropLifePausesWithWorld` 且 `scrollDelta === 0` 时不扣 life；
  *      磁吸不受影响、照常））—— ⚠️ life **不参与生死**：耗尽既不结算、也不移除；
- *   ③ **世界滚动位移** `drop.y -= world.scrollDelta`（世界里的静止物体，被背景带着走）；
- *   ④ **磁吸位移**（玩家侧行为，**叠加**在 ③ 之上，不替换、不覆盖；水平方向不受限）；
- *   ⑤ **单调夹取**：`dropNeverMovesUp` 且 `drop.y > y0` → `drop.y = y0`（**判定之前**做 —— 判定只看夹取后的位置）；
- *   ⑥ **拾取判定**（唯一收益路径）→ `Collected`；
- *   ⑦ **出屏消失** `drop.y <= 屏幕底 - dropDespawnBelowScreen` → `Fell`（**不结算**）。
+ *   ② **世界滚动位移** `drop.y -= world.scrollDelta`（世界里的静止物体，被背景带着走；**只向下**）；
+ *   ③ **磁吸位移**（玩家侧行为，**叠加**在 ② 之上，不替换、不覆盖；**方向不受限 —— 玩家在上方时就向上飞**）；
+ *   ④ **拾取判定**（唯一收益路径）→ `Collected`；
+ *   ⑤ **出屏消失** `drop.y <= 屏幕底 - dropDespawnBelowScreen` → `Fell`（**不结算**）。
+ *   ⚠️ v1.10 修订：③ 之后、④ 之前**没有**任何"绝不向上"的单调夹取（`dropNeverMovesUp` 已删除）——
+ *      ② 是**唯一**把掉落物往下推的力，所以**唯一**能把掉落物往上抬的就是磁吸（这正是需求）。
  *
- * ⚠️ `dt` 只影响 **② 计时** 与 **④ 磁吸步长**，**不影响 ③** —— `scrollDelta` 本身就是一个
+ * ⚠️ `dt` 只影响 **① 计时** 与 **③ 磁吸步长**，**不影响 ②** —— `scrollDelta` 本身就是一个
  * **位移**（它已经含了 dt，由 `advanceWorldScroll()` 算出）。这与敌人完全同口径
  * （`EnemySim` 的 Falling 分支同样是 `enemy.y -= world.scrollDelta`，也不再看 dt）。
  *
@@ -106,19 +108,19 @@ export function stepDrop(drop: DropRuntime, dt: number, world: DropWorld): DropO
 
     const step = Number.isFinite(dt) && dt > 0 ? dt : 0;
 
-    // ① 单调夹取的基准：**进入本帧时**的 y（必须在 ③④ 任何位移之前取）
-    const y0 = drop.y;
-
-    // ② 存活计时：世界暂停（scrollDelta === 0）时**冻结**（磁吸照常、寿命冻结）。
-    //    ⚠️ life 已**不参与生死**：耗尽既不结算、也不移除（唯一消失路径是 ⑦ 出屏）—— 所以这里没有 return。
+    // ① 存活计时：世界暂停（scrollDelta === 0）时**冻结**（磁吸照常、寿命冻结）。
+    //    ⚠️ life 已**不参与生死**：耗尽既不结算、也不移除（唯一消失路径是 ⑤ 出屏）—— 所以这里没有 return。
     const lifeFrozen = GameTuning.dropLifePausesWithWorld && world.scrollDelta === 0;
     if (!lifeFrozen) drop.life -= step;
 
-    // ③ 世界滚动位移：与 EnemySim 的 Falling 分支是同一句；
+    // ② 世界滚动位移：与 EnemySim 的 Falling 分支是同一句；**只向下**（scrollDelta 天然非负）；
     //    世界暂停（任一敌人停住）时 scrollDelta = 0 → 这一句天然什么都不做 → 掉落物一起停
     drop.y -= world.scrollDelta;
 
-    // ④ 磁吸：进入范围即永久吸附；朝玩家飞 —— **叠加**在滚动位移之上（世界暂停时磁吸照常）
+    // ③ 磁吸：进入范围即永久吸附；朝玩家飞 —— **叠加**在滚动位移之上（世界暂停时磁吸照常）。
+    //    ⚠️ **方向不受限**：玩家在掉落物**上方**时，磁吸把它**向上**拉（这是被允许的，也是必需的）——
+    //    v1.10 修订**删掉了**旧的"绝不向上"单调夹取（`dropNeverMovesUp`）：它会把这个向上的分量
+    //    按回原地 → 掉落物只剩横向分量 → 永远追在玩家后面、进不了 pickupRadius（线上 bug）
     const dist = distance(drop.x, drop.y, world.playerX, world.playerY);
     if (!drop.magnetized && dist <= world.magnetRadius) drop.magnetized = true;
     if (drop.magnetized && dist > world.pickupRadius) {
@@ -128,11 +130,7 @@ export function stepDrop(drop: DropRuntime, dt: number, world: DropWorld): DropO
         drop.y += (world.playerY - drop.y) * ratio;
     }
 
-    // ⑤ 单调夹取（**绝不向上移动**）：位移都算完了才夹，且**先夹后判** →
-    //    判定看到的位置永远满足「y <= 进入本帧时的 y0」；水平方向（x）不受限制（横向被吸是允许的）
-    if (GameTuning.dropNeverMovesUp && drop.y > y0) drop.y = y0;
-
-    // ⑥ 拾取：用**本帧最终位置**判定（先滚动、再磁吸、再夹取 → 判定不吃上一帧的滞后）
+    // ④ 拾取：用**本帧最终位置**判定（先滚动、再磁吸 → 判定不吃上一帧的滞后；中间**没有**夹取）
     //    ⚠️ 这是**唯一**会产生收益的路径 —— 也**只有这一处**置「已结算闸门」：
     //    置位后，同一个掉落物即使还留在场上（调用方漏了移除），下一帧起也只会拿到 ⓪ 的 `Alive`
     if (distance(drop.x, drop.y, world.playerX, world.playerY) <= world.pickupRadius) {
@@ -140,7 +138,7 @@ export function stepDrop(drop: DropRuntime, dt: number, world: DropWorld): DropO
         return DropOutcome.Collected;
     }
 
-    // ⑦ 出屏消失：越过屏幕**底边**再往下 dropDespawnBelowScreen px → 移除但**绝不结算**。
+    // ⑤ 出屏消失：越过屏幕**底边**再往下 dropDespawnBelowScreen px → 移除但**绝不结算**。
     //    掉落物会一路下移穿过 diveLineY（越俯冲线**不再**收取）→ 玩家在更低处仍能捡到。
     //    ⚠️ 这里**不**置 `drop.collected`：`Fell` 本来就不产生收益（置位是多余的），而且置位会把
     //    "该消失却没消失"的簿记错误**掩盖**掉（下一帧会静默返回 `Alive`）—— 闸门只管"进过账的不许再进"
