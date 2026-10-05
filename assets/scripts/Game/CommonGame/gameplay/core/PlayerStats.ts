@@ -236,4 +236,39 @@ export function describeStats(stats: RunStats): string {
         `磁吸+${stats.magnetRadiusBonus}`,
         `经验×${stats.expMul.toFixed(2)}`,
     ].join(' | ');
+}/** 面板 HUD 数值快照（纯函数，口径与 BattleView.updateHud() 的世界内 HUD 逐字一致） */
+export interface HudSnapshot {
+    /** `关卡 1　波次 3/5` */
+    levelText: string;
+    /** 经验条比例，已钳到 [0,1] */
+    expRatio: number;
+    /** 血条比例，已钳到 [0,1] */
+    hpRatio: number;
+    /** `弹匣 3/6` */
+    magazineText: string;
+}
+/** 进度比例：永远返回 [0,1] 内的有限数；max<=0、负值、NaN、Infinity 一律 0 */
+export function barRatio(value: number, max: number): number {
+    if (!Number.isFinite(value) || !Number.isFinite(max) || max <= 0) return 0;
+    const r = value / max;
+    if (!Number.isFinite(r)) return 0;
+    return Math.min(1, Math.max(0, r));
+}
+/** 弹匣里还剩几发（下限 0） */
+export function magazineFree(stats: RunStats, magazineOut: number): number {
+    const out = Number.isFinite(magazineOut) ? magazineOut : 0;
+    return Math.max(0, Math.floor(stats.bulletCount - out));
+}
+/** 组装面板 HUD 快照；文案与 BattleView.updateHud() 逐字一致 */
+export function buildHudSnapshot(level: number, wave: number, stats: RunStats, magazineOut: number): HudSnapshot {
+    const lv = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+    const wv = Number.isFinite(wave) ? Math.max(1, Math.floor(wave)) : 1;
+    const per = Math.max(1, GameTuning.wavesPerLevel);
+    const need = expToNextLevel(stats);
+    return {
+        levelText: '关卡 ' + lv + '　波次 ' + wv + '/' + per,
+        expRatio: barRatio(stats.exp, need),
+        hpRatio: barRatio(stats.hp, stats.maxHp),
+        magazineText: '弹匣 ' + magazineFree(stats, magazineOut) + '/' + stats.bulletCount,
+    };
 }

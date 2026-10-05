@@ -68,8 +68,10 @@ import {
 } from '../core/MathModels';
 import { EnemySpawnSpec, SpawnEvent, buildSpawnSchedule, buildWavePlan, createEnemyRuntime } from '../core/WaveBuilder';
 import {
+    HudSnapshot,
     RunStats,
     SkillDef,
+    buildHudSnapshot,
     createRunStats,
     damagePlayer,
     describeStats,
@@ -167,6 +169,8 @@ export interface BattleOptions {
     onRestart?: () => void;
     /** 点「返回主页」 */
     onExit?: () => void;
+    /** HUD 数值回调：把与 updateHud() 同一套数值同步给面板四个节点 */
+    onHud?: (hud: HudSnapshot) => void;
 }
 
 /**
@@ -914,6 +918,8 @@ export class BattleView extends Component {
         const barTransform = barNode.addComponent(UITransform);
         barTransform.setContentSize(240, 10);
         this.m_ExpBar = barNode.addComponent(Graphics);
+        // 世界内 HUD 隐藏（v1.11）：改由面板 m_LevelText/m_ExpBar/m_HpBar/m_BulletCount 显示
+        for (const h of [this.m_HpLabel?.node, this.m_MagazineLabel?.node, this.m_WaveLabel?.node, this.m_ExpLabel?.node, barNode]) if (h && h.isValid) h.active = false;
 
         if (SHOW_DEBUG_HUD) {
             this.m_DebugLabel = createLabel(this.m_HudRoot, 'Debug', '', 18, new Color(150, 255, 190, 255));
@@ -1915,6 +1921,9 @@ export class BattleView extends Component {
             this.m_LastExpRatio = ratio;
             this.drawExpBar(ratio);
         }
+
+        // 同步给面板 HUD（GamePanel 的四个节点）
+        this.m_Options?.onHud?.(buildHudSnapshot(this.m_Options?.level ?? 1, this.m_Wave, stats, this.m_MagazineOut));
 
         if (this.m_DebugLabel) {
             const bg = this.m_BackgroundUsesNode

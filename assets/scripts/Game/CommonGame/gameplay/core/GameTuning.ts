@@ -144,7 +144,7 @@ export const GameTuning = {
      * 两者共用同一个 delta（`ScrollWorld.advanceWorldScroll`），行距不变量
      * `rowGapCells × cellSize` 与全部越线/俯冲判定语义都**保持不变**。
      */
-    baseFallSpeed: 20,
+    baseFallSpeed: 30,
     /** 每波世界滚动速度成长 */
     fallSpeedGrowth: 0.08,
     /** 世界滚动速度成长上限倍率 */

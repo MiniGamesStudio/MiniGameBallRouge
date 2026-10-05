@@ -1,9 +1,10 @@
-import { _decorator, Button, Node, RichText, view } from 'cc';
+import { _decorator, Button, Label, Node, ProgressBar, RichText, view } from 'cc';
 import { UIBase } from '../../../engine/ui/UIBase';
 import { UIManager } from '../../../engine/ui/UIManager';
 import { CommonUIID } from '../CommonUIConfig';
 import { CommonGameProgress } from '../CommonGameProgress';
 import { BattleView } from '../gameplay/view/BattleView';
+import { HudSnapshot } from '../gameplay/core/PlayerStats';
 const { ccclass, property } = _decorator;
 
 const DESIGN_ROOT_WIDTH = 750;
@@ -27,10 +28,16 @@ export class GamePanel extends UIBase {
     m_GameRoot: Node = null;
     @property(Button)
     m_PauseBtn: Button = null;
-    @property(RichText)
-    m_LevelText: RichText = null;
+    @property(Label)
+    m_LevelText: Label = null;
     @property(Node)
     m_GameBg: Node = null;
+    @property(ProgressBar)
+    m_ExpBar: ProgressBar = null;
+    @property(ProgressBar)
+    m_HpBar: ProgressBar = null;
+    @property(Label)
+    m_BulletCount: Label = null;
 
     // —— 以下 3 个是"面板自身"的配置，与玩法数值无关，保留在 prefab 里可调 ——
     @property({ tooltip: '默认打开的关卡，从 1 开始' })
@@ -65,6 +72,11 @@ export class GamePanel extends UIBase {
     }
 
     OnClose(): void {
+        // 复位面板 HUD，避免残留上一局数值
+        if (this.m_LevelText && this.m_LevelText.isValid) this.m_LevelText.string = "";
+        if (this.m_BulletCount && this.m_BulletCount.isValid) this.m_BulletCount.string = "";
+        if (this.m_ExpBar && this.m_ExpBar.isValid) this.m_ExpBar.progress = 0;
+        if (this.m_HpBar && this.m_HpBar.isValid) this.m_HpBar.progress = 1;
         super.OnClose();
         this.destroyBattle();
         this.m_IsPaused = false;
@@ -88,6 +100,7 @@ export class GamePanel extends UIBase {
             // 在这里**显式注入**（BattleOptions 字段），BattleView 不做 getChildByName 之类的
             // 字符串查找（脆弱），也不需要"先建网格再换贴图"的二次重建（那样第一帧会跳位）。
             backgroundNode: this.m_GameBg,
+            onHud: hud => this.applyHud(hud),
             onRestart: () => this.restartCurrentLevel(),
             onExit: () => this.goBackMainPanel(),
         });
@@ -100,6 +113,14 @@ export class GamePanel extends UIBase {
             this.m_Battle.node.destroy();
         }
         this.m_Battle = null;
+    }
+
+    /** 面板 HUD：把战斗侧同步来的数值写进四个节点（空引用保护 + 值没变不重写） */
+    private applyHud(hud: HudSnapshot): void {
+        if (this.m_LevelText && this.m_LevelText.isValid && this.m_LevelText.string !== hud.levelText) this.m_LevelText.string = hud.levelText;
+        if (this.m_ExpBar && this.m_ExpBar.isValid) this.m_ExpBar.progress = hud.expRatio;
+        if (this.m_HpBar && this.m_HpBar.isValid) this.m_HpBar.progress = hud.hpRatio;
+        if (this.m_BulletCount && this.m_BulletCount.isValid && this.m_BulletCount.string !== hud.magazineText) this.m_BulletCount.string = hud.magazineText;
     }
 
     private updateLevel(level: number): void {
