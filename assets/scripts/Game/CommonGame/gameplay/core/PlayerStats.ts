@@ -22,6 +22,10 @@ export interface RunStats {
     /** 开火间隔（s） */
     fireInterval: number;
     bulletDamage: number;
+    /** 暴击概率（0~1）：基础值取自 GameTuning，可被天赋/词条提升 */
+    critChance: number;
+    /** 暴击伤害倍率（≥1）：基础值取自 GameTuning，可被天赋/词条提升 */
+    critMul: number;
     bulletSpeed: number;
     /** 回收半径加成 */
     catchRadiusBonus: number;
@@ -42,6 +46,8 @@ export function createRunStats(): RunStats {
         bulletCount: GameTuning.bulletCount,
         fireInterval: GameTuning.fireInterval,
         bulletDamage: GameTuning.bulletDamage,
+        critChance: GameTuning.critChance,
+        critMul: GameTuning.critMul,
         bulletSpeed: GameTuning.bulletSpeed,
         catchRadiusBonus: 0,
         magnetRadiusBonus: 0,
@@ -128,6 +134,26 @@ export const SKILL_POOL: readonly SkillDef[] = [
         },
     },
     {
+        id: 's_crit_rate',
+        name: '暴击率提升',
+        desc: '暴击率 +8%',
+        maxLevel: 5,
+        apply: stats => {
+            // 上限保护：概率不超过 1；累加，与 s_greed 同类写法
+            stats.critChance = Math.min(1, stats.critChance + 0.08);
+        },
+    },
+    {
+        id: 's_crit_damage',
+        name: '暴击伤害提升',
+        desc: '暴击伤害 +30%',
+        maxLevel: 5,
+        apply: stats => {
+            // 上限保护：倍率不超过 4；累加（装满 5 级为 1.6 + 1.5 = 3.1）
+            stats.critMul = Math.min(4, stats.critMul + 0.3);
+        },
+    },
+    {
         id: 's_greed',
         name: '贪婪',
         desc: '经验获取 +20%',
@@ -203,6 +229,7 @@ export function describeStats(stats: RunStats): string {
         `HP ${Math.ceil(stats.hp)}/${stats.maxHp}`,
         `弹匣 ${stats.bulletCount}`,
         `伤害 ${stats.bulletDamage}`,
+        `暴击 ${Math.round(stats.critChance * 100)}%/${stats.critMul.toFixed(2)}×`,
         `间隔 ${stats.fireInterval.toFixed(3)}s`,
         `弹速 ${Math.round(stats.bulletSpeed)}`,
         `回收+${stats.catchRadiusBonus}`,

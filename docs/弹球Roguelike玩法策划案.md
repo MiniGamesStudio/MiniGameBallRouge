@@ -1627,6 +1627,7 @@ GamePanel
 | 美术适配 | 怪物 / 玩家图按 contain 适配到占格内，留白系数 0.92 | `artFitMargin` |
 | 底图九宫格 | 品质底图切边 16px（128 的 12.5%），拉伸铺满占格时四角 / 描边不糊 | `baseSliceInset` |
 | 打击反馈 | 闪白 0.12 s（不透明度 210 → 0）+ 敌人震动 0.16 s / 5 px | `hitFlashTime` / `hitFlashAlpha` / `hitShakeTime` / `hitShakeAmplitude` |
+| 伤害飘字 | 全程 1.0 s（0→1.3×→1.0×→0.85×）/ 上浮 110 px / 弹出 0.15 s / 描边 2.5 px / 出生点 32 px 圆内随机 | `damageTextLife` / `damageTextRise` / `damageTextPop` / `damageTextPopScale` / `damageTextOutline` / `damageTextScatter` |
 | 带内错峰 | 0.08 s，**按列**分配（同列共享延迟）；跨带再把上一带的最大延迟补进时钟 | `spawnStagger` / `spawnStaggerBudget` |
 | 入场缩放动画 | `0.6 → 1.0`，0.25 s | 表现参数 |
 
@@ -1641,6 +1642,7 @@ GamePanel
 | 开火间隔 | 0.35 s | `fireInterval` |
 | 子弹速度 / 半径 | 900 px/s / 10 px | `bulletSpeed` / `bulletRadius` |
 | 单发伤害 | 10 | `bulletDamage` |
+| 暴击 | 15% / 1.6×（伤害 = max(1, round(基础伤害 × 倍率))，可被天赋/词条提升） | `critChance` / `critMul` |
 | 回收/接弹半径 | 判定半径 + 10 | `catchRadius` |
 | 兜底存活 | 8 s | `maxBulletLife` |
 | 磁吸半径 | 120 px（1.5 格，可升级） | `magnetRadius` |
@@ -2369,7 +2371,12 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 | `critChance` | 0.15 | 暴击概率（玩家子弹与敌人攻击共用） |
 | `critMul` | 1.6 | 暴击倍率；伤害 = `max(1, round(基础伤害 × 倍率))` |
 
-> **待办**：暴击目前是**全局基础值**，未接入天赋/装备词条（建议后续加"暴击率 +x%""暴击伤害 +x%"接 `PlayerStats` + 天赋池）。
+> **已完成（P0）**：暴击已接入可成长属性 —— `PlayerStats` 的 `RunStats` 新增 `critChance`（基础值 0.15）与 `critMul`（基础值 1.6），默认值取自 `GameTuning.critChance` / `GameTuning.critMul`；`BattleView` 的「敌人受击」与「玩家受击」两处判定改读 `this.m_Stats.critChance` / `this.m_Stats.critMul`（`GameTuning` 只作基础默认值来源）。
+
+| 词条（技能池 ID） | 名称 | 效果 | 加算方式 | 上限保护 |
+|---|---|---|---|---|
+| `s_crit_rate` | **暴击率提升** | 暴击率 **+8%**/级（满级 5 级：15% → 55%） | **累加** `critChance += 0.08`（与 `s_greed` 同类写法） | `Math.min(1, …)`，概率不超过 1 |
+| `s_crit_damage` | **暴击伤害提升** | 暴击伤害 **+30%**/级（倍率 +0.3；满级 5 级：1.6× → 3.1×） | **累加** `critMul += 0.3` | `Math.min(4, …)`，倍率不超过 4 |
 
 ### I-5 新增调参项（`GameTuning`）
 

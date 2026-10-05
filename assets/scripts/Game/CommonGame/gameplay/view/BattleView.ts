@@ -636,9 +636,9 @@ export class BattleView extends Component {
     /** 子弹命中敌人：扣血 → 可能死亡 → 掉落 */
     private onBulletHitEnemy(_bullet: BulletRuntime, enemy: EnemyRuntime): void {
         if (!isHittable(enemy) || enemy.hp <= 0) return;
-        // 暴击判定（需求：普通/暴击飘字颜色不同）
-        const crit = this.m_Rng.next() < GameTuning.critChance;
-        const dmg = Math.max(1, Math.round(this.m_Stats.bulletDamage * (crit ? GameTuning.critMul : 1)));
+        // 暴击判定：读玩家属性（可被天赋/词条提升）；普通/暴击飘字颜色不同
+        const crit = this.m_Rng.next() < this.m_Stats.critChance;
+        const dmg = Math.max(1, Math.round(this.m_Stats.bulletDamage * (crit ? this.m_Stats.critMul : 1)));
         enemy.hp -= dmg;
         this.spawnDamageText(enemy.x, enemy.y, dmg, crit, false);
 
@@ -950,8 +950,8 @@ export class BattleView extends Component {
         if (this.m_Finished) return;
         this.m_PlayerFeedback?.trigger();
         // 敌人攻击也会暴击（需求：不同伤害类型不同颜色）
-        const pCrit = this.m_Rng.next() < GameTuning.critChance;
-        const pDmg = pCrit ? Math.max(1, Math.round(damage * GameTuning.critMul)) : damage;
+        const pCrit = this.m_Rng.next() < this.m_Stats.critChance;
+        const pDmg = pCrit ? Math.max(1, Math.round(damage * this.m_Stats.critMul)) : damage;
         const dead = damagePlayer(this.m_Stats, pDmg);
         this.spawnDamageText(this.m_PlayerX, this.m_PlayerY, pDmg, pCrit, true);
         if (dead) this.finishGameOver();
