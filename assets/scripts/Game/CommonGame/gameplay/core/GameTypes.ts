@@ -156,13 +156,21 @@ export interface EnemyRuntime {
 export interface DropRuntime {
     id: number;
     kind: DropKind;
+    /**
+     * 世界坐标（场空间）。
+     *
+     * v1.10 起掉落物是「**世界里的静止物体**」：生成时散落一次后**自身不动**，
+     * 屏幕位移全部来自世界滚动（`DropSim.stepDrop()` 里的 `world.scrollDelta`，
+     * 与敌人 / 背景是**同一个值**）→ 三者严格锁步。
+     */
     x: number;
     y: number;
+    /** 预留：抛物线飞出的初速度（现方案是"原地散落一次"，恒为 0） */
     vx: number;
     vy: number;
     /** 价值：经验值 / 金币数 / 魂晶数 / 超级水晶个数 */
     value: number;
-    /** 剩余存活时间 */
+    /** 剩余存活时间（超时**移除但不结算**，§11.3；世界暂停时计时照走） */
     life: number;
     /** 是否已被玩家吸附（吸附后不再减速） */
     magnetized: boolean;

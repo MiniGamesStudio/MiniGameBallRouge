@@ -65,7 +65,7 @@
 | v0.3 | —— | 制作人重定义核心设计（原 §26），加入敌人三轴模型、掉落成长、可配置化要求 |
 | **v1.0** | **2026-10-03** | **本文档**：按 5+2 条要求重构全文，收敛为可开发的策划文档；补齐配置表模板、验收标准、旧编号映射 |
 | **v1.1** | **2026-10-03** | **可玩版实测修复**：占位美术真正显示（SpriteFrame 两段式加载 + 缺图可见兜底）；敌人生成节奏与下落速度联动，消除行间重叠 |
-| **v1.10** | **2026-10-04** | **滚动世界：敌人"生成后自身不动"、随背景一起向下移动**：敌人不再自己下落，改为**由世界滚动位移驱动** —— 新增 `core/ScrollWorld.ts` 作为**唯一滚动源**（每帧 `delta = 当前波 fallSpeed × dt`，**背景与敌人共用同一个 delta**，`EnemyWorld.scrollDelta` 故意做成**必填**，让"另算一套速度"在编译期就过不去）；`fallSpeed` **语义不变**（20 px/s、+8%/波、上限 ×2.5），它现在**同时就是背景滚动速度**，`rowGapCells × cellSize` 的行距不变量与越线 / 俯冲判定全部不变；背景改用**真实美术 `m_GameBg` 多块拼接循环**：面板背景节点**本体就是第 0 块**（不复制它的数据、不隐藏它）+ 克隆出**足够块数**（数量由 `backgroundTileCount()` 推，**不凭手感取 2**）；**周期 = 节点实际显示高度**（`UITransform.contentSize.height × 纵向缩放`，`backgroundPatternHeight` = **0 = 自动**，见 `resolvePatternHeight`）、**基准 = `m_GameBg` 原位置**（**第一帧不跳位**）、克隆块**同父同级且贴在最底层**、滚动量按 `backgroundSpaceScale()` 做「场空间 → 面板空间」换算（窄高屏上与敌人**视觉锁步**）；块间用**交叉淡入淡出**消接缝（主图裁掉末尾 `backgroundSeamFadeRows` 行 + 每块顶部再用 alpha 渐变叠回 → 接缝两边在原图里**本就是相邻行**，实测接缝行差 **6.27× → 0.78×**）；程序化网格**降级为兜底**（`backgroundUseNodeSprite` = false / 节点缺贴图时启用，周期改用独立键 `backgroundGridPatternHeight` = 768 = 6 × `cellSize`，**3 块**拼接、**回绕步长 = 一个图案周期** → 回绕前后**逐像素相同**，必然无缝）；层级**最底层**（背景 < 瞄准射线 < 敌人 < 子弹/掉落/飘字）；**世界暂停语义统一**：任一敌人停住（到底 Telegraph / 冰冻 `frozen`）→ `applyStopBlocking()` 返回 true → `delta = 0` → **背景与敌人一起静止**、恢复后一起继续（消灭"敌人停了背景还在滚"的穿帮）；新增 `backgroundScrollEnabled` / `backgroundPatternHeight` / `backgroundGridPatternHeight` / `backgroundUseNodeSprite` / `backgroundSeamFade` / `backgroundSeamFadeRows` / `backgroundSeamFadeMaxStripPx` / `backgroundGridAlpha` 共 **8** 个调参项（见 **§24.8** / 附录 **K-7**） |
+| **v1.10** | **2026-10-04** | **滚动世界：敌人"生成后自身不动"、随背景一起向下移动**：敌人不再自己下落，改为**由世界滚动位移驱动** —— 新增 `core/ScrollWorld.ts` 作为**唯一滚动源**（每帧 `delta = 当前波 fallSpeed × dt`，**背景与敌人共用同一个 delta**，`EnemyWorld.scrollDelta` 故意做成**必填**，让"另算一套速度"在编译期就过不去）；`fallSpeed` **语义不变**（20 px/s、+8%/波、上限 ×2.5），它现在**同时就是背景滚动速度**，`rowGapCells × cellSize` 的行距不变量与越线 / 俯冲判定全部不变；背景改用**真实美术 `m_GameBg` 多块拼接循环**：面板背景节点**本体就是第 0 块**（不复制它的数据、不隐藏它）+ 克隆出**足够块数**（数量由 `backgroundTileCount()` 推，**不凭手感取 2**）；**周期 = 节点实际显示高度**（`UITransform.contentSize.height × 纵向缩放`，`backgroundPatternHeight` = **0 = 自动**，见 `resolvePatternHeight`）、**基准 = `m_GameBg` 原位置**（**第一帧不跳位**）、克隆块**同父同级且贴在最底层**、滚动量按 `backgroundSpaceScale()` 做「场空间 → 面板空间」换算（窄高屏上与敌人**视觉锁步**）；块间用**交叉淡入淡出**消接缝（主图裁掉末尾 `backgroundSeamFadeRows` 行 + 每块顶部再用 alpha 渐变叠回 → 接缝两边在原图里**本就是相邻行**，实测接缝行差 **6.27× → 0.78×**）；程序化网格**降级为兜底**（`backgroundUseNodeSprite` = false / 节点缺贴图时启用，周期改用独立键 `backgroundGridPatternHeight` = 768 = 6 × `cellSize`，**3 块**拼接、**回绕步长 = 一个图案周期** → 回绕前后**逐像素相同**，必然无缝）；层级**最底层**（背景 < 瞄准射线 < 敌人 < 子弹/掉落/飘字）；**世界暂停语义统一**：任一敌人停住（到底 Telegraph / 冰冻 `frozen`）→ `applyStopBlocking()` 返回 true → `delta = 0` → **背景与敌人一起静止**、恢复后一起继续（消灭"敌人停了背景还在滚"的穿帮）；新增 `backgroundScrollEnabled` / `backgroundPatternHeight` / `backgroundGridPatternHeight` / `backgroundUseNodeSprite` / `backgroundSeamFade` / `backgroundSeamFadeRows` / `backgroundSeamFadeMaxStripPx` / `backgroundGridAlpha` 共 **8** 个调参项（见 **§24.8** / 附录 **K-7**）；**掉落物随背景滚动**（同一条需求的延续）：新增 `core/DropSim.ts`，让掉落物也消费**同一个** `delta`（`DropWorld` 与 `EnemyWorld` 共用 `WorldScrollConsumer` 契约、`scrollDelta` **必填** → "另算一套速度"编译期就过不去）→ 掉落物、敌人、背景**严格锁步**；生成时的散落仍是**算一次**的世界内偏移（不重算、不抖动）；**磁吸照常叠加**在滚动位移之上（顺序写死"先滚动、再磁吸"，谁也**不覆盖**谁），**世界暂停时磁吸照常**（玩家侧行为，与"俯冲不受世界暂停影响"同口径）；新增 **`dropAutoCollectAtDiveLine` = true**：掉落物**中心**越过俯冲线 `diveLineY` 即**自动收取**，走**与正常拾取同一条**结算路径（`BattleView.collectDrop()`）→ **掉落不丢**（不加这一条它们会随背景滚出屏幕底部**凭空消失**，而掉落是经济来源） |
 | **v1.9** | **2026-10-04** | **操作方案 A + 瞄准辅助射线**：①**按住玩家 = 走位**（`playerGrabRadius` **74px** = 1.25 × 玩家球显示半径 ≈ 58.9px）、**其它任意处点击/拖动 = 调整射击方向**（按下即生效），两个触摸**独立 id 可同时生效**（一手走位一手调角度）；②瞄准浮标**降级为纯方向标识、不可拖动**，删除 `isPressOnCursor()` 与 `CURSOR_GRAB_BAND`；③新增**兜底自动瞄准**：瞄准触摸空闲 `autoAimDelay` = **2.0s** 后每帧锁定**最近的可命中敌人**（`pickAutoAimTarget`，走位不打断、瞄准触摸立即接管、无目标保持最后方向）；④新增**瞄准辅助射线 + 首段反弹射线**：与真实弹道**同源**（复用 `BulletSim.reflectOffWalls` / `hitsBottomWall`，相交半径 = `bulletRadius`），反弹段到「第二次相交」或 `aimGuideBounceLength` = **900px** **取短者**，底墙不反射（子弹在那里转入回身）；**遇墙与遇敌都会反射**（敌人判定框与子弹判定同源、与墙一起取最近交点），**虚线**（`aimGuideDashLength` = **18** / `aimGuideDashGap` = **12**，跨顶点连续、拐点不断缝）+ **描边**（`aimGuideOutline` = **2 px** 单边，先描粗深色再叠亮色，`aimGuideOutlineAlpha` = **150**）、线宽 `aimGuideWidth` = **10 px**、透明度 `aimGuideAlpha` = **130** / 反弹段 `aimGuideBounceAlpha` = **80**，层级**在敌人之下、背景之上**（见 **附录 J**） |
 | **v1.8** | **2026-10-04** | **伤害飘字 + 暴击**：敌人/玩家受伤飘伤害数字，敌人·普通🟡暖黄 / 敌人·暴击🟠橙红 / 玩家·普通🔴亮红 / 玩家·暴击🟣紫红**四色区分**，统一**描边 2.5px + 加粗**；数字**从 0 放大**（0→1.3×→1.0×→0.85×）+ **缓出上浮 110px**，**全程 1.0s**；出生点在 **32px 圆内均匀随机**；新增**暴击**（15% / 1.6×）（见 **附录 I**） |
 | **v1.7** | **2026-10-04** | **掉落 4 图 + 瞄准浮标外围圆**：接入经验水晶 `texture/exp`（**经验值越大图越大**）、金币 `texture/coin`（**按品质掉 0~8 枚**，总收益不变）、魂晶 `texture/hun`（**BOSS 品质越高越大越多**）、超级水晶 `texture/super`；瞄准浮标改为**玩家子节点**并**绕玩家外围圆旋转**（半径 = 玩家图显示半径 + 5 ≈ 64px），玩家与浮标**层级都在敌人之上**（见 **附录 H**） |
@@ -112,9 +112,9 @@
 > ② **敌人重叠**：行入场间隔原来写死 0.5 s，而第 1 波下落速度只有 25 px/s —— 新行出生时上一行才下落 20px（行高 128px），两行直接糊在一起。现在行间隔由「本带行数 × `rowGapCells`(1.2) × `cellSize` ÷ 当前波下落速度」推出，行距恒为 153.6px（行间留 25.6px 空隙）；出生带的**顶边**对齐出生线，两格大怪不再往上顶半格；带内错峰改为**按列**分配（同一列所有敌人共享同一延迟 → 同列纵向间距恒为整格），并把上一带的最大错峰延迟补进跨带时钟（否则"少落一段"的敌人会和新带贴住：竖版 BOSS 让带高变成 3~4 行后实测只剩 124px < 一格 128px）；跨带推进按 `max(本带行数, 上一带行数)` 计。
 > ③ **受击闪白形状不对**：最初按占格画白色圆角矩形，但贴图四周有透明留白，白块把留白一起盖住，看起来像"贴了个白方块"而不是"这只怪被打白了"。现在把精灵自己的 `spriteFrame` 设成 `Mask` 模板（`SPRITE_STENCIL`）再在模板内填白，白色只落在 alpha ≥ 0.1 的轮廓内；坑点是**必须先设 `type` 再设 `spriteFrame`**（内部模板 Sprite 在设 `type` 时才创建），且要把内部 Sprite 的 `sizeMode` 钉成 `CUSTOM`。
 
-**已实现（P0）**：双指操作（拖玩家 / 拖游标，游标贴玩家外围圆旋转（半径 = 玩家图显示半径 + 5px），玩家与浮标层级**恒在敌人 / 子弹 / 掉落之上**）、自动开火与弹匣账本、子弹弹射与底墙回身与主动接弹、防穿模子步进与命中去重、敌人逐行生成（品质底图整只一张、九宫格拉伸 + 怪物图叠加，带缩放弹出动画）与**随世界滚动下移**（v1.10：敌人自身不动、被背景带着走）、**背景连续无缝循环**（程序化网格 + 三块拼接）、越线 1 s 判定与俯冲（放大 → 缩小 → 命中判定）、经验水晶掉落与磁吸拾取、升级三选一（满级不出现、连升连弹）、开局天赋三选一、波次推进与过关 / 失败结算、HUD（血量 / 弹匣 / 波次 / 等级经验条）、受击反馈（敌我闪白 + 敌人轻微震动）。
+**已实现（P0）**：双指操作（拖玩家 / 拖游标，游标贴玩家外围圆旋转（半径 = 玩家图显示半径 + 5px），玩家与浮标层级**恒在敌人 / 子弹 / 掉落之上**）、自动开火与弹匣账本、子弹弹射与底墙回身与主动接弹、防穿模子步进与命中去重、敌人逐行生成（品质底图整只一张、九宫格拉伸 + 怪物图叠加，带缩放弹出动画）与**随世界滚动下移**（v1.10：敌人自身不动、被背景带着走；**掉落物同样随世界滚动**，含**越俯冲线自动收取**与"暂停时磁吸照常"）、**背景连续无缝循环**（程序化网格 + 三块拼接）、越线 1 s 判定与俯冲（放大 → 缩小 → 命中判定）、经验水晶掉落与磁吸拾取、升级三选一（满级不出现、连升连弹）、开局天赋三选一、波次推进与过关 / 失败结算、HUD（血量 / 弹匣 / 波次 / 等级经验条）、受击反馈（敌我闪白 + 敌人轻微震动）。
 
-**L1 单测**：`tests/ball-roguelike/`（jest + ts-jest，共 125 条，全绿）覆盖**滚动世界（背景回绕无缝 / 世界暂停 `delta` = 0 / 敌人与背景锁步 / 真实美术周期 `resolvePatternHeight` 的兜底 / 块数覆盖整屏（含"少一块就露空隙"）/ 场→面板空间换算 `backgroundSpaceScale` / 接缝淡出 `seamFadeStrips`）**、子弹三条铁律（底墙回身 / 回身穿透不结算 / 不永久卡死）、出膛保护与防穿模子步进、命中接触窗口去重、**瞄准辅助射线与真实弹道逐点一致（含遇敌反射）**、经验曲线与连升、波次成长封顶、装箱不变量（不重叠 / 不出界 / 不降级）、俯冲判定与走位躲避、技能三选一与满级过滤。跑法：`npx jest --selectProjects ball-roguelike`。旧六边形地形那套测试单独保留为 `hex-terrain` 项目（其源码已随旧玩法删除，因此目前是红的）。
+**L1 单测**：`tests/ball-roguelike/`（jest + ts-jest，共 **147** 条 = 5 suites，全绿）覆盖**滚动世界（背景回绕无缝 / 世界暂停 `delta` = 0 / 掉落物·敌人·背景**逐帧**锁步 / 真实美术周期 `resolvePatternHeight` 的兜底 / 块数覆盖整屏（含"少一块就露空隙"）/ 场→面板空间换算 `backgroundSpaceScale` / 接缝淡出 `seamFadeStrips` / **掉落物随世界滚动**：磁吸**叠加**在滚动位移之上、**世界暂停时磁吸照常**、**越俯冲线自动收取**（与正常拾取**同一条**结算路径 `collectDrop()`）、超时只移除不结算）**、子弹三条铁律（底墙回身 / 回身穿透不结算 / 不永久卡死）、出膛保护与防穿模子步进、命中接触窗口去重、**瞄准辅助射线与真实弹道逐点一致（含遇敌反射）**、经验曲线与连升、波次成长封顶、装箱不变量（不重叠 / 不出界 / 不降级）、俯冲判定与走位躲避、技能三选一与满级过滤。跑法：`npx jest --selectProjects ball-roguelike`。旧六边形地形那套测试单独保留为 `hex-terrain` 项目（其源码已随旧玩法删除，因此目前是红的）。
 
 **还没做（P1+）**：接 FlatBuffers 配置表（现数值在 `GameTuning`，覆盖接口已留）、敌人攻击手段（射箭 / 子弹 / 激光 / 直线冲击）与 BOSS 多阶段、技能进化与融合、超级水晶三种用途、金币刷新与购买、外围加点与皮肤、音效与正式 UI 面板、伤害数字等表现。
 
@@ -541,9 +541,9 @@ HP = 品质单格血量 × 占格数 × 类型血量倍率 × 难度血量倍率
 | 环节 | 规格 |
 |---|---|
 | **生成位置** | 直接在棋盘**顶部第一格**（y = +667）出生并缩放弹出，不再从屏幕外"走进来" |
-| **滚动世界（v1.10）** | 敌人**生成后自身不动**：屏幕位移**全部**来自世界滚动位移 `world.scrollDelta`（`stepEnemy` 的 Falling 分支，不再用 `enemy.speed × dt`）。每帧只算**一个**滚动量 `delta = 当前波 fallSpeed × dt`（`core/ScrollWorld.ts`），**背景与敌人共用它** → 两者永远锁步，绝无两套速度；累计量按背景周期回绕存储（恒在 `[0, 周期)`；真实美术下周期 = 背景块的显示高度），长期运行不丢精度 |
+| **滚动世界（v1.10）** | 敌人**生成后自身不动**：屏幕位移**全部**来自世界滚动位移 `world.scrollDelta`（`stepEnemy` 的 Falling 分支，不再用 `enemy.speed × dt`）。每帧只算**一个**滚动量 `delta = 当前波 fallSpeed × dt`（`core/ScrollWorld.ts`），**背景、敌人、掉落物共用它** → 三者永远锁步，绝无两套速度（消费者契约 = `WorldScrollConsumer`，`scrollDelta` **必填** → "另算一套速度"编译期就过不去；掉落物见 §11.1/§11.3）；累计量按背景周期回绕存储（恒在 `[0, 周期)`；真实美术下周期 = 背景块的显示高度），长期运行不丢精度 |
 | **背景循环** | **真实美术 `m_GameBg`** 铺满可视区并随滚动下移：面板节点**本体 = 第 0 块**（原位即基准 → **第一帧不跳位**）+ 克隆块；**周期 = 节点实际显示高度**（`backgroundPatternHeight` = **0 = 自动**）、块数 = `ceil(可视高 ÷ 周期) + 1`（**不凭手感取 2**：本配置 1334 ÷ 1334 + 1 = **2 块**）、克隆块与本体**同父同级、贴在最底层**、滚动量按 `backgroundSpaceScale()` 换算到场→面板空间（窄高屏与敌人**视觉锁步**）；块间**交叉淡入淡出**（裁末尾 `backgroundSeamFadeRows` = 8 行 + 顶部 alpha 渐变叠回）→ 接缝两边在原图里**本就是相邻行**：实测 **6.27× → 0.78×**、带内最大 1.59×（**小于美术自身的 2.25×**）；网格兜底路径不变（三块拼接、周期 `backgroundGridPatternHeight` = 768 = 6 × `cellSize`、回绕步长 = 一个周期 → 逐像素相同）；两条路径**绝不同时出现**（走网格时真实背景节点会被整个藏起来，收尾还原），层级都在**最底层**（背景 < 瞄准射线 < 敌人 < 子弹/掉落/飘字），不遮任何战斗元素，也盖不到 HUD |
-| **全场停止（= 世界暂停，v1.10 语义统一）** | **任意一个**敌人停住不动时（到底站住 Telegraph、或被冰冻 / 眩晕等技能定住 `frozen`），**整个世界一起停住**：`applyStopBlocking` 返回"已暂停" → `delta = 0` → **背景与敌人同时静止**；该敌人被消灭或恢复后，整个世界一起继续。这样既保持 v1.5「全场停止」的设计意图，又消灭了「敌人停了背景还在滚」的穿帮。（俯冲中的敌人是**自身扑击**、不是世界滚动，仍按 `diveSpeed` 飞行，不受世界暂停影响） |
+| **全场停止（= 世界暂停，v1.10 语义统一）** | **任意一个**敌人停住不动时（到底站住 Telegraph、或被冰冻 / 眩晕等技能定住 `frozen`），**整个世界一起停住**：`applyStopBlocking` 返回"已暂停" → `delta = 0` → **背景、敌人、掉落物同时静止**（掉落物消费的是同一个值为 0 的 delta）；该敌人被消灭或恢复后，整个世界一起继续。这样既保持 v1.5「全场停止」的设计意图，又消灭了「敌人停了背景还在滚」的穿帮。（俯冲中的敌人是**自身扑击**、不是世界滚动，仍按 `diveSpeed` 飞行，不受世界暂停影响；**掉落物的磁吸**同理 —— 磁吸是**玩家侧**行为，世界暂停时**照常**，见 §11.3） |
 | **排列方式** | 敌人**一行行排列**，棋盘 5 列；同一带的敌人按 `spawnStagger`（0.08 s）**按列**错峰入场（同列共享同一延迟） |
 | **入场动画** | 每个敌人播放**缩放弹出动画**：`scale 0.6 → 1.0`，时长 **0.25 s**，带轻微回弹（`backOut`） |
 | **行入场间隔** | **不写死时间**：新的一带要出生，先等已出生的内容随世界下滚「本带行数 × `rowGapCells`」格，即 `行数 × rowGapCells × cellSize ÷ 当前波世界滚动速度`（世界滚动速度 = `waveScaling(wave).fallSpeed`，**同时就是背景滚动速度**）；`rowGapCells` 默认 **1.2**（一行 128px → 行距 153.6px，行与行留 25.6px 空隙） |
@@ -741,9 +741,10 @@ enum SkillKind { Talent, Active, Passive }   // 天赋 / 主动 / 被动
 | 规则 | 内容 |
 |---|---|
 | **触发** | **每击杀一个敌人**即掉落（不需要"概率掉落经验"） |
-| **散落方式** | 以敌人所在位置为**圆心**、半径 **0.2 格 = 16 px**，向**随机方向**散落（原地轻微散开，不做抛物线飞出） |
+| **散落方式** | 以敌人所在位置为**圆心**、半径 **0.2 格 = 25.6 px**（`dropScatterRadius` = 26），向**随机方向**散落（原地轻微散开，不做抛物线飞出）。⚠️ 只在**生成时算一次**、直接烘进坐标 → 之后每帧**不再重算**（所以不会抖动）；它是「**世界内偏移**」，随世界滚动一起走 |
+| **生成后自身不动（v1.10）** | 掉落物 = 「**世界里的静止物体**」：屏幕位移**全部**来自世界滚动位移 `world.scrollDelta`（与敌人 / 背景**同一个值**）→ 掉落物、敌人、背景**严格锁步**；世界暂停时与敌人**一起停**，而**磁吸照常**（见 §11.3） |
 | **散落动画** | 出现时 0.2 s 的缩放弹出 + 轻微位移，让玩家注意到"这儿掉了东西" |
-| **单位说明** | 需求里的"半径 0.2"按**格**理解（1 格 = 80 px → 0.2 格 = 16 px）。这是已拍板结论，不是屏幕比例 |
+| **单位说明** | 需求里的"半径 0.2"按**格**理解（1 格 = **128 px** → 0.2 格 = **25.6 px**）。这是已拍板结论，不是屏幕比例 |
 
 ### 11.2 四类掉落物
 
@@ -760,10 +761,13 @@ enum SkillKind { Talent, Active, Passive }   // 天赋 / 主动 / 被动
 
 | 规则 | 值 | 说明 |
 |---|---|---|
-| **自动磁吸** | `magnetRadius` 初始 **1.5 格 = 120 px** | 进入范围后掉落物**自动飞向玩家**，不需要手动点击 |
+| **自动磁吸** | `magnetRadius` 初始 **1.5 格 = 192 px**（= 1.5 × `cellSize` 128） | 进入范围后掉落物**自动飞向玩家**，不需要手动点击 |
 | **磁吸范围可升级** | 技能 / 外围加点都能提升 | "捡东西的效率"本身是一条成长线 |
-| **范围外** | 留在原地不动 | 玩家需要主动走过去 |
-| **超时消失** | `dropLifeTime` 默认 **15 s**，最后 3 s 闪烁提示 | 防止场上堆积过多节点 |
+| **范围外** | 留在原地不动（但**世界仍在滚**：v1.10 起它随背景一起下移，直到越俯冲线被自动收取） | 玩家需要主动走过去 |
+| **与世界滚动的关系（v1.10）** | 磁吸位移**叠加**在滚动位移之上：顺序**写死**为「**先滚动、再磁吸**」（`core/DropSim.ts` 的 `stepDrop()`）—— 两者都是**位移**，谁也**不覆盖**谁。单测直接断言"两者同时生效时向下位移 = 滚动位移 + 磁吸位移" |
+| **世界暂停时** | **磁吸照常**（磁吸是**玩家侧**行为、不是世界滚动，与"俯冲不受世界暂停影响"同口径）；世界暂停只停**滚动位移**，而**存活计时照走**（与 Telegraph 的 `stateTime` 同口径） |
+| **滚出战场（越俯冲线）** | **自动收取**（`dropAutoCollectAtDiveLine` 默认 **true**）：掉落物**中心**越过 `diveLineY`（**-507**）的**那一帧**就被收取，走**与正常拾取完全同一条**结算路径（`BattleView.collectDrop()`）→ **掉落不丢**、语义清晰（"滚出战场的东西自动回收"）。关掉它 → 掉落物会滚出屏幕底部**凭空消失**（掉落是经济来源，所以默认开） |
+| **超时消失** | `dropLifeTime` 默认 **15 s**，最后 3 s 闪烁提示（**移除但不结算** —— 这是"防止场上堆积"的既有口径，**本次未改**）。⚠️ 它仍是一条**会丢掉落**的路径：出生位置较高时（离俯冲线 > `速度 × 15 s`），掉落物可能先超时；所以远列的掉落物仍要靠**走位 + 磁吸**去捡 | 防止场上堆积过多节点 |
 | **同屏上限** | 建议 **80 个**，超出时最旧的自动消失 | 微信小游戏性能兜底 |
 
 ### 11.4 升级流程
@@ -1073,7 +1077,7 @@ interface PlayerDef {
   bulletRadius: number;      // 10
   catchRadius: number;       // 回收/接弹半径
   maxBulletLife: number;     // 兜底强制回身（8s）
-  magnetRadius: number;      // 掉落物磁吸半径（120）
+  magnetRadius: number;      // 掉落物磁吸半径（192 = 1.5 格）
   sprite: string;
 }
 
@@ -1654,7 +1658,7 @@ GamePanel
 | 暴击 | 15% / 1.6×（伤害 = max(1, round(基础伤害 × 倍率))，可被天赋/词条提升） | `critChance` / `critMul` |
 | 回收/接弹半径 | 判定半径 + 10 | `catchRadius` |
 | 兜底存活 | 8 s | `maxBulletLife` |
-| 磁吸半径 | 120 px（1.5 格，可升级） | `magnetRadius` |
+| 磁吸半径 | **192 px**（1.5 格，可升级） | `magnetRadius` |
 | 免费弹上限 | 8 | `freeBulletMax` |
 
 ### 24.3 敌人
@@ -1681,11 +1685,13 @@ GamePanel
 
 | 项 | 值 |
 |---|---|
-| 散落 | 半径 0.2 格（16 px）随机方向，每次击杀 1 颗经验水晶（BOSS 2~4 颗） |
+| 散落 | 半径 0.2 格（**25.6 px**）随机方向、**只在生成时算一次**（世界内偏移 → 不重算、不抖动），每次击杀 1 颗经验水晶（BOSS 2~4 颗） |
+| **随世界滚动（v1.10）** | 掉落物生成后**自身不动**，屏幕位移**全部**来自 `world.scrollDelta`（与敌人 / 背景**同一个值**）→ 三者**严格锁步**；世界暂停时一起停；**磁吸叠加**在滚动之上、且**暂停时照常**（`core/DropSim.ts` 的纯函数 `stepDrop`） |
 | 超级水晶 | 精英 15% / 小BOSS 100% / 大BOSS 2 颗 |
 | 魂晶 | 精英 1 / 小BOSS 3 / 大BOSS 10 |
 | 金币 | 每次击杀按品质 1~25 |
-| 掉落物存活 | 15 s（最后 3 s 闪烁） |
+| 掉落物存活 | 15 s（最后 3 s 闪烁；**移除但不结算**，§11.3） |
+| **越俯冲线自动收取** | **true**（掉落物**中心**越过 `diveLineY` = -507 即收取，走与正常拾取**同一条**结算路径 → 掉落不丢），配置键 `dropAutoCollectAtDiveLine` |
 | 升级经验 | `need(n) = 8 + 6(n−1) + 1.5(n−1)²` |
 | 三选一候选 | 3 个；刷新 20 金币起（每次 +20） |
 
@@ -1736,6 +1742,8 @@ GamePanel
 | 兜底图案 | **程序化网格**（深色底 + 横线间距 `cellSize` + 竖线 = 棋盘列线），相位对齐 `spawnLineY` → 与敌人占格线**永远重合**；底色 / 线色为 `BattleView` 模块常量（`BG_BASE_COLOR` / `BG_GRID_COLOR` / `BG_GRID_WIDTH`=2px） | 不进配置表（按需求用模块常量） |
 | 层级 | **最底层**：背景 < 瞄准射线 < 敌人 < 子弹/掉落/飘字 < 玩家；HUD 在 `m_HudRoot`（`Field` 的后一个兄弟节点）→ 背景**盖不到 HUD** | 网格：`m_FieldRoot` 的**第一个**子节点；真实美术：面板第一个子节点起的那一组（克隆块紧跟本体） |
 | 世界暂停 | 任一敌人停住（Telegraph / `frozen`）→ `applyStopBlocking()` 返回 true → `delta = 0` → **背景与敌人一起静止**，恢复后一起继续（单测：暂停 3 s 再恢复，累计量与块位置分毫未动、恢复后第一帧就是普通一帧的位移） | 复用 v1.5 的 `applyStopBlocking`（返回值即暂停标志） |
+| **掉落物（第三个消费者）** | 掉落物 = 「**世界里的静止物体**」：生成时散落一次后自身不动，每帧消费**同一个** `m_ScrollDelta`（`m_DropWorld.scrollDelta`）→ 与敌人、背景**严格锁步**；世界暂停时**一起停**（恢复后不跳位），而**磁吸照常**（玩家侧行为，**叠加**在滚动位移之上、顺序写死"先滚动、再磁吸"） | `core/DropSim.ts` 的 `stepDrop()`（纯函数）；`WorldScrollConsumer` 契约（`scrollDelta` **必填**） |
+| **掉落物越俯冲线自动收取** | **true**：掉落物**中心**越过 `diveLineY`（-507）**那一帧**即收取，走**既有**的 `BattleView.collectDrop()`（与正常拾取同一条结算路径 → 掉落不丢）；关闭后掉落物会随背景滚出屏幕底部**凭空消失** | `dropAutoCollectAtDiveLine`（**布尔项**：`applyTuningValues()` 只覆盖 number，所以只能改代码默认值） |
 | 长期精度 | 累计量按周期回绕存储，对外表现连续 → 跑几小时也不会出现浮点漂移 | `wrapBackgroundOffset()` + `backgroundFieldPeriod()`（真实美术下 = 块间距 ÷ 空间系数） |
 | **待办（美术）(c)** | 现用的两张背景图都是**整屏插画、不可平铺**，现在靠**交叉淡入淡出**压住接缝（残留 9.4/255 鬼影、内容纵向拉伸 1.0028×）。**TODO：画一张可平铺（上下接得上 / 四方连续）的背景** → 届时 `backgroundSeamFade` 可关、也不必裁帧 | — |
 
@@ -1847,6 +1855,7 @@ GamePanel
 - [ ] 金币可刷新候选、可购买技能；价格随进度上浮
 - [ ] 超级水晶三种用途全部可用：升级 / 进化（满级→质变）/ 融合（两个满级→新技能并腾出技能位）
 - [ ] 掉落物磁吸范围可被技能与加点提升；超时消失
+- [ ] **掉落物随世界滚动下移**（与敌人、背景同一滚动源）：世界暂停时一起停、**磁吸叠加且暂停时照常**、**越过俯冲线自动收取**（`dropAutoCollectAtDiveLine` = true，走与拾取同一条结算路径 → 掉落不丢）
 
 ### 26.4 可配置化（需求 5）
 
@@ -1988,7 +1997,7 @@ GamePanel
 | `bulletRadius` | int | 子弹半径（10） |
 | `catchRadius` | int | 回收 / 接弹半径 |
 | `maxBulletLife` | float | 兜底强制回身（8 s） |
-| `magnetRadius` | int | 掉落物磁吸半径（120） |
+| `magnetRadius` | int | 掉落物磁吸半径（192 = 1.5 格） |
 | `freeBulletMax` | int | 免费弹上限（8） |
 | `sprite` | string | 贴图名 |
 | `desc` | string | 备注 |
@@ -2370,6 +2379,8 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 
 > 缺图时退回洋红圆点兜底（正常不会走到）。
 
+> **v1.10 补充：掉落物随世界滚动** —— 上表讲的是"长什么样 / 掉多少"，**运动口径**见 **§11.1 / §11.3 / 附录 K-8**：掉落物**生成后自身不动**（散落只算一次、之后不重算），随背景**一起下移**（消费与敌人**同一个** `world.scrollDelta` → 严格锁步）；**世界暂停时一起停**；**磁吸叠加**在滚动位移之上、且**暂停时照常**（玩家侧行为）；**越过俯冲线即自动收取**（与正常拾取**同一条**结算路径，掉落不丢）。
+
 **瞄准浮标（`Cursor`）**：
 
 1. **是玩家节点的子节点** → 只需给局部坐标，天然跟随玩家移动、天然画在玩家之上；
@@ -2547,7 +2558,8 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 | 谁在动？ | **只有世界在动**。敌人**生成后自身不动**，屏幕位移全部来自世界滚动位移 `world.scrollDelta`（`EnemySim.stepEnemy` 的 Falling 分支：`enemy.y -= world.scrollDelta`，不再用 `enemy.speed × dt`） |
 | 单一滚动源 | `BattleView.updateScroll()` 每帧只算**一个** `delta`（`ScrollWorld.advanceWorldScroll`），**背景与敌人共用它**。为了让"另算一套速度"在**编译期**就过不去，`EnemyWorld.scrollDelta` 是**必填**字段（不是可选、也没有兜底默认值） |
 | 速度 | `delta = 当前波 waveScaling(wave).fallSpeed × dt`。`fallSpeed` **语义与数值完全不变**（20 px/s、+8%/波、上限 ×2.5），它现在**同时就是背景滚动速度** —— 所以 §9.2 的 `rowGapCells × cellSize` 行距不变量、§9.4 的越线判定、俯冲逻辑**一个都没改** |
-| 什么**不是**世界滚动？ | ① **俯冲（Diving）**：那是敌人自身的扑击动作，仍走 `diveSpeed`（世界暂停时也照飞）；② **玩家的走位**、子弹、掉落、飘字：都与世界滚动无关，一律不动 |
+| 什么**不是**世界滚动？ | ① **俯冲（Diving）**：那是敌人自身的扑击动作，仍走 `diveSpeed`（世界暂停时也照飞）；② **玩家的走位**、子弹、飘字：都与世界滚动无关，一律不动；③ **掉落物的磁吸**：那是**玩家侧**的吸附行为（**叠加**在滚动位移之上），与俯冲同属"不受世界暂停影响"的一侧 —— 见 **K-3 / K-8** |
+| 谁是消费者？（第三位） | **掉落物**也随世界滚动：`core/DropSim.ts` 的 `DropWorld` 与 `EnemySim.EnemyWorld` **共用同一个 `WorldScrollConsumer` 契约**（`scrollDelta` **必填**：不是可选、也没有兜底默认值）→ 敌人的 Falling、掉落物的位移、背景块摆位用的是**同一个 `delta`**，单测**逐帧**断言三者位移严格相等 |
 
 ### K-2 无缝循环是怎么保证的（三条判据，不是"目测没问题"）
 
@@ -2563,10 +2575,12 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 
 **现有规则**：任一敌人因冰冻 / 眩晕 / 到底 Telegraph 被停住时，全场敌人一起停止下落（`EnemySim.applyStopBlocking()`）。
 
-**滚动世界下的正确表现**：**整个世界（背景 + 敌人）一起停住**，恢复后一起继续。
-**接法**：`applyStopBlocking()` 现在**返回**"是否已暂停" → 直接作为 `advanceWorldScroll(..., paused, ...)` 的入参 → `paused` 时 `delta = 0` → 背景与敌人**同时**静止。
+**滚动世界下的正确表现**：**整个世界（背景 + 敌人 + 掉落物）一起停住**，恢复后一起继续。
+**接法**：`applyStopBlocking()` 现在**返回**"是否已暂停" → 直接作为 `advanceWorldScroll(..., paused, ...)` 的入参 → `paused` 时 `delta = 0` → 背景、敌人、掉落物**同时**静止（掉落物消费的是同一个值为 0 的 delta）。
 
 > 为什么必须这样接：否则会出现「敌人停了、背景还在滚」的穿帮 —— 既然敌人的位移是背景给的，背景不停而敌人停，逻辑上就自相矛盾。
+>
+> **世界暂停时"什么照常"的边界**（与"俯冲照飞"同一条口径）：**掉落物的磁吸照常** —— 磁吸是**玩家侧**行为、不是世界滚动，所以 `stepDrop()` 里它**叠加**在滚动位移之上、不受暂停影响；同理，掉落物的**存活计时**也照走（与 Telegraph 的 `stateTime` 同口径）。**只有"滚动位移"这一项是 0**。
 
 ### K-4 新增调参项（`GameTuning`）
 
@@ -2580,6 +2594,7 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 | `backgroundSeamFadeRows` | **8** | 淡出带行数（贴图行）≈ 750 宽下 3.75px。实测 8 / 16 / 96 行 → 接缝 0.78× / 0.83× / 1.14×、带内最大 1.59× / 2.72× / 4.60× → **别调大** |
 | `backgroundSeamFadeMaxStripPx` | **0.5** | 每条最大显示高度 px → 条数 = `ceil(带高 ÷ 该值)`（上限 16）；默认 = **每个贴图行一条**（子像素台阶） |
 | `backgroundGridAlpha` | **26** | 网格线不透明度（0~255），**低对比度**，不抢敌人与射线（仅网格兜底） |
+| `dropAutoCollectAtDiveLine` | **true** | **掉落物**越过俯冲线（`diveLineY` = -507）即**自动收取**（滚出战场即回收 → 掉落不丢），走**既有**的 `BattleView.collectDrop()` 结算；false = 允许掉落物滚出屏幕底部**凭空消失**。⚠️ **布尔项**：`applyTuningValues()` 只覆盖 `number`，所以它（与上面几个开关一样）**只能改代码默认值** |
 
 > 底色 / 线色 / 线宽按需求**不进配置表**，用 `BattleView` 模块常量：`BG_BASE_COLOR`、`BG_GRID_COLOR`、`BG_GRID_WIDTH`(2px)。
 
@@ -2587,12 +2602,14 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 
 | 文件 | 内容 |
 |---|---|
-| `gameplay/core/ScrollWorld.ts`（**新**） | `wrapBackgroundOffset(scrollY, patternHeight)` → `[0, patternHeight)` 的回绕偏移（负值 / `NaN` / `patternHeight <= 0` 全部兜底）；`effectiveScrollDelta(delta, paused)` → 暂停时**恒为 0**；`advanceWorldScroll(scrollY, speed, dt, paused, patternHeight)` → `{ delta, scrollY }`（唯一滚动源）；`backgroundTileCount(viewHeight, patternHeight)` → 拼接块数；`gridAlignedBottom(alignY, bottom, cellSize)` → ≤ 屏底的最大格点；`backgroundTileBottomY(baseY, offset, patternHeight, index)` → 第 index 块的底边 y |
-| `gameplay/core/EnemySim.ts` | `EnemyWorld` 新增**必填** `scrollDelta`；Falling 分支改用 `world.scrollDelta`；`applyStopBlocking()` 由 `void` 改为**返回 boolean**（= 世界暂停标志） |
-| `gameplay/core/GameTuning.ts` | 新增 §24.8 的三个键；`baseFallSpeed` / `fallSpeedGrowth` / `fallSpeedCapMul` 的注释改为"世界滚动速度"口径（**数值未动**） |
-| `gameplay/core/GameTypes.ts` | `EnemyRuntime.speed` 注释：从"下落速度"改为"世界滚动速度（只是这只怪属于哪一档速度的记录）" |
-| `gameplay/view/BattleView.ts` | `createBackground()` / `paintBackgroundBase()` / `paintBackgroundGrid()`（背景层，`m_FieldRoot` **第一个**子节点 = 最底层）；`updateScroll()`（**单一滚动源** + 世界暂停裁决）；`updateBackground()`（只消费 `m_ScrollY`）；`updateEnemies()` 改为写入 `m_EnemyWorld.scrollDelta`；调试 HUD 增加 `滚 <offset>/768　d <delta>` |
+| `gameplay/core/ScrollWorld.ts`（**新**） | `WorldScrollConsumer`（**消费世界滚动的统一契约**：只有**必填**的 `scrollDelta`，敌人与掉落物共用它 → "另算一套速度"编译期就过不去）；`wrapBackgroundOffset(scrollY, patternHeight)` → `[0, patternHeight)` 的回绕偏移（负值 / `NaN` / `patternHeight <= 0` 全部兜底）；`effectiveScrollDelta(delta, paused)` → 暂停时**恒为 0**；`advanceWorldScroll(scrollY, speed, dt, paused, patternHeight)` → `{ delta, scrollY }`（唯一滚动源）；`backgroundTileCount(viewHeight, patternHeight)` → 拼接块数；`gridAlignedBottom(alignY, bottom, cellSize)` → ≤ 屏底的最大格点；`backgroundTileBottomY(baseY, offset, patternHeight, index)` → 第 index 块的底边 y |
+| `gameplay/core/DropSim.ts`（**新**） | `DropWorld extends WorldScrollConsumer`（含 `playerX/playerY/magnetRadius/pickupRadius/magnetSpeed/autoCollectAtDiveLine`）；`DropOutcome`（`Alive` / `Collected` / `Expired`）；`hasDropCrossedDiveLine(drop)`（中心越 `diveLineY`）；`stepDrop(drop, dt, world)` —— **顺序写死**：① 存活计时 → ② `drop.y -= world.scrollDelta`（世界滚动）→ ③ 磁吸（**叠加**）→ ④ 拾取判定 → ⑤ 越俯冲线自动收取（④⑤ 返回**同一个** `Collected` → 结算只有一条路径） |
+| `gameplay/core/EnemySim.ts` | `EnemyWorld extends WorldScrollConsumer`（`scrollDelta` 仍是**必填**）；Falling 分支用 `world.scrollDelta`；`applyStopBlocking()` 由 `void` 改为**返回 boolean**（= 世界暂停标志） |
+| `gameplay/core/GameTuning.ts` | 新增 §24.8 的 8 个背景键 + **`dropAutoCollectAtDiveLine`（true）**；`dropScatterRadius` / `magnetSpeed` / `dropLifeTime` 的注释改成"滚动世界"口径（**数值未动**） |
+| `gameplay/core/GameTypes.ts` | `EnemyRuntime.speed` 注释：从"下落速度"改为"世界滚动速度（只是这只怪属于哪一档速度的记录）"；`DropRuntime.x/y` 注释改为"世界坐标：掉落物是**世界里的静止物体**" |
+| `gameplay/view/BattleView.ts` | `createBackground()` / `paintBackgroundBase()` / `paintBackgroundGrid()`（背景层，`m_FieldRoot` **第一个**子节点 = 最底层）；`updateScroll()`（**单一滚动源** + 世界暂停裁决）；`updateBackground()`（只消费 `m_ScrollY`）；`updateEnemies()` / **`updateDrops()`** 分别写入 `m_EnemyWorld.scrollDelta` / **`m_DropWorld.scrollDelta`**（**同一个** `m_ScrollDelta`）；主循环把 `updateDrops()` 挪进"滚动消费块"（`updateEnemies → updateBackground → updateDrops`）；`updateDrops()` 改为调 `stepDrop()` + **唯一结算入口** `collectDrop()`；调试 HUD 增加 `滚 <offset>/768　d <delta>` |
 | `tests/ball-roguelike/ScrollWorld.test.ts`（**新**） | 50 条：回绕（含 0 / 正好一周期 / 多周期 / 负值 / 极小极大 / 非正周期兜底）、世界推进（**暂停时 delta 必须为 0**）、拼接块数与"两块不够"的证据、网格对齐、**逐像素无缝的数学判据**（局部坐标连续 + 周期 + 圆周距离 ≤ 位移量）、**锁步**（一帧内敌人位移 === 背景位移 === `delta`） |
+| `tests/ball-roguelike/DropSim.test.ts`（**新**） | **22 条**：**逐帧锁步**（掉落物位移 === 敌人位移 === 背景块位移 === `delta`，600 帧 + 5000 帧长跑不漂移）、**世界暂停**（180 帧 delta ≡ 0、y 分毫未动；恢复后第一帧恰为 `fallSpeed × dt`）、**磁吸叠加**（同时生效时位移 = 滚动 + 磁吸；等价于"先纯滚动一帧、再纯磁吸一帧"；暂停时磁吸照常）、**越俯冲线自动收取**（越线**那一帧**收、未越线不收、玩家在极远处也会收 → 证明不是"拾取"收的；关掉开关就会滚出屏幕丢掉）、**同一条结算路径**（拾取与自动收取返回**同一个**结果值 + 两边账本一字不差）、超时只移除不结算、非法 `dt` 兜底、编译期契约（两个世界都能赋给 `WorldScrollConsumer`） |
 
 ### K-6 为什么背景用程序化网格，而不是仓库里现成的背景图
 
@@ -2637,3 +2654,21 @@ ui/SkillPanel.ts         三选一面板（硬编码 Skill_1/2/3）
 > 条数 `K` 的影响（8 行带）：K=1 → 3.41×、K=2 → 3.42×、K=4 → 2.00×、K=8 → **1.59×** → 默认"每个贴图行一条"（`backgroundSeamFadeMaxStripPx` = 0.5px）。
 
 **代价与残留（如实记录）**：① 内容纵向拉伸 **1.0028×**（= 2848 ÷ 2840，肉眼不可见）；② 每块多 `K` 个 Sprite 节点（默认 2 块 × 8 条 = 16 个，远低于 HUD 的量级）；③ 接缝处有 **9.4/255** 的"鬼影"（被裁掉的行与主图首行的色调差异）—— 这是方案 (a) 的**固有代价**，要彻底消除只能走 (c) 重画美术。
+
+### K-8 掉落物随世界滚动（v1.10 补齐：暂停 / 磁吸 / 自动收取三条口径）
+
+**需求原话**：「**掉落物也要随背景移动**」。
+
+**背景**：v1.10 把敌人改成"由世界滚动位移驱动"之后，**掉落物原来还钉在屏幕上**（本附录 K-1 曾明确写"掉落…与世界滚动无关，一律不动"）—— 背景一滚就穿帮（掉落物浮在原地不动）。所以本次把掉落物接到**同一个滚动源**上。
+
+| 项 | 结论 |
+|---|---|
+| 怎么接的 | 新增 `core/DropSim.ts`（纯逻辑、可单测）：`DropWorld` 与 `EnemySim.EnemyWorld` **共用 `WorldScrollConsumer` 契约**（`scrollDelta` **必填**：不是可选、没有兜底默认值 → "另算一套速度"**编译期**就过不去）；`stepDrop()` 里一句 `drop.y -= world.scrollDelta`（与敌人 Falling 分支**同一句**）；`BattleView.updateDrops()` 每帧把**同一个** `m_ScrollDelta` 写进 `m_DropWorld.scrollDelta`，主循环把 `updateDrops()` 挪进"滚动消费块"（`updateEnemies → updateBackground → updateDrops`），三者紧挨着消费同一个值 |
+| 掉落物是什么 | **世界里的静止物体**：生成时散落一次（`dropScatterRadius` 内的**世界内偏移**，`BattleView.addDrop()` 直接烘进 `drop.x / drop.y`）之后**自身不动**，每帧屏幕位移**全部**来自世界滚动 → 与敌人、背景**严格锁步**（单测**逐帧**断言三者位移严格相等，另有 5000 帧长跑不漂移） |
+| 口径①：世界暂停 | `worldPaused = true → delta = 0` → 掉落物与敌人、背景**一起停**（同一个 delta 天然满足）；暂停 3 秒再恢复**不跳位**（恢复后第一帧位移恰为 `fallSpeed × dt`，**不补**暂停期间累积的量）—— 单测逐帧断言 |
+| 口径②：磁吸 | **叠加**在滚动位移之上，顺序**写死**为「**先滚动、再磁吸**」（`stepDrop()` 注释 + 单测都钉住："一帧内两步 === 先纯滚动一帧、再纯磁吸一帧"）。**世界暂停时磁吸照常** —— 磁吸是**玩家侧**行为、不是世界滚动，与"俯冲照飞"同一条边界口径。**绝不用滚动位移替换磁吸** |
+| 口径③：出屏回收 | 选 **(a) 越过俯冲线即自动收取**（`dropAutoCollectAtDiveLine` = **true**）：掉落物**中心**越过 `diveLineY`（-507）的**那一帧**就走**既有的** `BattleView.collectDrop()` 结算 —— 与正常拾取**同一条路径**（`stepDrop()` 对两者返回**同一个** `DropOutcome.Collected` → 视图层只可能有一条结算分支；单测直接断言两边账本一字不差）。**不选 (b)**：出屏即销毁会**丢掉落**，而掉落是经济来源；**不选 (c)**：到线停下悬着会**堆积节点** |
+| 判定为什么用"中心" | 敌人用「自身矩形**底边**」（它是占格的大块、判定按占格），掉落物是点状小物件、没有占格 → **中心即判定点**。两条判定各在自家 core 文件里，单测直接卡边界（`y == diveLineY` 算越线，`y = diveLineY + 1e-9` 不算） |
+| 残留的"会丢掉落"路径（如实记录） | **超时消失**（`dropLifeTime` = 15 s，**移除但不结算**）是 §11.3 的既有"防堆积"口径，**本次未改**。它与滚动叠加后的后果：离俯冲线超过 `速度 × 15 s` 的掉落物会**先超时**（第 1 波 20 px/s → 约 300 px），所以远列的掉落物仍要靠**走位 + 磁吸**去捡。要彻底消灭这条丢落路径，只能让超时也走结算（会明显放大收益，属平衡改动 → **未做**） |
+| 调参项 | `dropAutoCollectAtDiveLine`（**true**；**布尔项** → `applyTuningValues()` 只覆盖 `number`，只能改代码默认值） |
+| 单测 | `tests/ball-roguelike/DropSim.test.ts` **22 条**（随 jest 一起跑；项目总计见本文件前面的「L1 单测」一行） |

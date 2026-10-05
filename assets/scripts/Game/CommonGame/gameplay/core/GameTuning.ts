@@ -250,16 +250,32 @@ export const GameTuning = {
     diveScaleDown: 0.5,
 
     // ─────────── 掉落与成长（§11） ───────────
-    /** 掉落物散落半径（0.2 格 = 25.6 px） */
+    /**
+     * 掉落物散落半径（0.2 格 = 25.6 px，取整 26）。
+     *
+     * ⚠️ 它是**生成时算一次**的"世界内偏移"（`BattleView.addDrop()` 直接烘进 `drop.x / drop.y`），
+     * **不是**每帧的速度 —— 掉落在世界里静止、只被世界滚动带着走（v1.10，见 core/DropSim.ts）。
+     */
     dropScatterRadius: 26,
     /** 磁吸半径（1.5 格 = 192 px），可被技能/加点提升 */
     magnetRadius: 192,
     /** 拾取半径 */
     pickupRadius: 38,
-    /** 磁吸飞行速度 px/s */
+    /** 磁吸飞行速度 px/s（玩家侧行为：**世界暂停时照常**，与滚动位移叠加，见 core/DropSim.ts） */
     magnetSpeed: 1120,
-    /** 掉落物存活时间（s），超时消失 */
+    /** 掉落物存活时间（s）：超时**移除但不结算**（§11.3 的"防止堆积"口径） */
     dropLifeTime: 15,
+    /**
+     * 掉落物越过俯冲线（`diveLineY`）即**自动收取**。
+     *
+     * v1.10 起掉落物随世界滚动下移 → 不加这一条它们会掉出屏幕底部、**凭空消失**（掉落是经济来源）。
+     * 开启后"滚出战场的掉落物自动回收"，收取走的是与正常拾取**同一条**结算路径
+     * （`BattleView.collectDrop()`，不新写结算）；false = 允许掉出屏幕（只有超时会丢）。
+     *
+     * ⚠️ 与 `backgroundScrollEnabled` / `backgroundSeamFade` 一样是**布尔项**：
+     * `applyTuningValues()` 只覆盖 number，所以它**只能改代码默认值**（不进配置表）。
+     */
+    dropAutoCollectAtDiveLine: true,
     /** 升级所需经验：need(n) = 8 + 6(n-1) + 1.5(n-1)^2 */
     expNeedBase: 8,
     expNeedLinear: 6,

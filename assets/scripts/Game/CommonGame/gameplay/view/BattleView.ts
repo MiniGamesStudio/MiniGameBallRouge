@@ -10,11 +10,14 @@
  *   2. 玩法规则都在 core/ 里（纯逻辑、可 L1 单测），这里只做"读状态 + 摆节点"；
  *   3. 素材全部来自 bundle `game`（占位美术，见 view/GameArt.ts）。
  *
- * v1.10 滚动世界（需求：敌人"生成后不动"、随背景一起向下移动、背景连续循环）：
+ * v1.10 滚动世界（需求：敌人"生成后不动"、随背景一起向下移动、背景连续循环；
+ * **掉落物同样随背景一起移动**）：
  *   世界运动只有**一个来源** —— `updateScroll()` 里的 `m_ScrollDelta` / `m_ScrollY`
- *   （由 core/ScrollWorld.ts 的纯函数算出）。敌人（`m_EnemyWorld.scrollDelta`）与背景
- *   （`updateBackground()`）都只消费它，谁都不许自己算速度；世界暂停（任一敌人被停住）
- *   时它等于 0，于是背景与敌人**一起**停。详见这两个方法的注释。
+ *   （由 core/ScrollWorld.ts 的纯函数算出）。**三个消费者**都只消费它，谁都不许自己算速度：
+ *   敌人（`m_EnemyWorld.scrollDelta`）、背景（`updateBackground()`）、
+ *   掉落物（`m_DropWorld.scrollDelta`，见 `updateDrops()`）。世界暂停（任一敌人被停住）
+ *   时它等于 0，于是背景、敌人、掉落物**一起**停；而**磁吸是玩家侧行为、照常**
+ *   （core/DropSim.ts 里"先滚动、再磁吸"，两者叠加）。详见这三个方法的注释。
  */
 
 import { _decorator, Button, Color, Component, EventTouch, Graphics, Input, Label, Node, Rect, Size, Sprite, SpriteFrame, UIOpacity, UITransform, Vec3, Widget, input, instantiate } from 'cc';
@@ -40,6 +43,7 @@ import {
 } from '../core/BoardMath';
 import { BulletWorld, aimVelocity, createBullet, stepBullet } from '../core/BulletSim';
 import { EnemyWorld, applyStopBlocking, enemyVisualScale, isDead, isHittable, killEnemy, pickAutoAimTarget, stepEnemy } from '../core/EnemySim';
+import { DropOutcome, DropWorld, stepDrop } from '../core/DropSim';
 import {
     FALLBACK_PATTERN_HEIGHT,
     SeamFadeStrip,
@@ -297,6 +301,14 @@ export class BattleView extends Component {
     private m_PlayerFeedback: HitFeedback | null = null;
     private m_Drops: DropRuntime[] = [];
     private m_DropNodes: Map<number, Node> = new Map();
+    /**
+     * 掉落物仿真世界（core/DropSim.ts 的纯函数用）。
+     *
+     * `scrollDelta` 每帧由 `updateDrops()` 写入**同一个** `m_ScrollDelta`
+     * （与敌人、背景同源）→ 掉落物 = "世界里的静止物体"，与敌人 / 背景**严格锁步**：
+     * 生成时散落一次之后就静止，屏幕位移全部来自世界滚动。
+     */
+    private m_DropWorld: DropWorld = null;
     private m_NextId: number = 1;
     private m_MagazineOut: number = 0;
     private m_FreeBulletsOut: number = 0;
@@ -922,7 +934,7 @@ export class BattleView extends Component {
         this.updateHud(true);
     }
 
-    /** 组装两个"世界"回调：core 只管算，这里只管改数据和节点 */
+    /** 组装各"仿真世界"：core 只管算，这里只管改数据和节点 */
     private createWorlds(): void {
         this.m_BulletWorld = {
             playerX: this.m_PlayerX,
@@ -940,6 +952,17 @@ export class BattleView extends Component {
             onDiveHitPlayer: (_enemy: EnemyRuntime, damage: number) => this.onPlayerDamaged(damage),
             onDiveFinished: () => undefined,
         };
+        this.m_DropWorld = {
+            playerX: this.m_PlayerX,
+            playerY: this.m_PlayerY,
+            // 同上：每帧由 updateDrops() 写入**同一个** m_ScrollDelta（与敌人、背景同源）
+            scrollDelta: 0,
+            // 磁吸半径每帧现算（含技能 / 加点加成）；其余三项是静态数值
+            magnetRadius: GameTuning.magnetRadius,
+            pickupRadius: GameTuning.pickupRadius,
+            magnetSpeed: GameTuning.magnetSpeed,
+            autoCollectAtDiveLine: GameTuning.dropAutoCollectAtDiveLine,
+        };
     }
 
     // ─────────── 主循环 ───────────
@@ -952,16 +975,18 @@ export class BattleView extends Component {
 
         this.updateFiring(d);
         this.updateSpawning(d);
-        // 单一滚动源：**先**算本帧世界滚动位移（含世界暂停裁决），**再**让背景与敌人分别消费它
+        // 单一滚动源：**先**算本帧世界滚动位移（含世界暂停裁决），
+        // **再**让三个消费者分别消费它 —— 顺序即"锁步"的可见形式：
+        // 敌人（updateEnemies）→ 背景（updateBackground）→ 掉落物（updateDrops）
         this.updateScroll(d);
         this.updateEnemies(d);
         this.updateBackground();
+        this.updateDrops(d);
         // 瞄准（兜底自动瞄准 + 浮标贴外围圆 + 辅助射线）放在敌人之后：
         // 用的是本帧最新的敌人位置，射线与真实弹道才对得上
         this.updateAim(d);
         this.m_PlayerFeedback?.update(d, this.m_PlayerX, this.m_PlayerY);
         this.updateBullets(d);
-        this.updateDrops(d);
         this.updateWaveFlow(d);
         this.updateHud(false);
         this.updateDamageTexts(d);
@@ -1477,7 +1502,11 @@ export class BattleView extends Component {
         }
     }
 
-    /** 击杀掉落：经验水晶必掉，金币/魂晶/超级水晶按品质与类型（需求 4） */
+    /**
+     * 击杀掉落：经验水晶必掉，金币/魂晶/超级水晶按品质与类型（需求 4）。
+     *
+     * v1.10：掉落物生成后**自身不动**（世界里静止），随世界滚动一起下移（core/DropSim.ts）。
+     */
     private spawnDrops(enemy: EnemyRuntime): void {
         const rng = this.m_Rng;
         const scatter = GameTuning.dropScatterRadius;
@@ -1509,7 +1538,8 @@ export class BattleView extends Component {
     }
 
     private addDrop(kind: DropKind, value: number, x: number, y: number, scatter: number): void {
-        // 在 0.2 格半径内随机方向散落（需求 4）
+        // 在 0.2 格半径内随机方向散落（需求 4）：**只在这里算一次**，直接烘进 `drop.x / drop.y`
+        // → 之后每帧**不再重算**（不会抖动）；它是"世界内偏移"，所以随世界滚动一起走
         const angle = this.m_Rng.next() * Math.PI * 2;
         const radius = Math.sqrt(this.m_Rng.next()) * scatter;
         const drop: DropRuntime = {
@@ -1555,33 +1585,43 @@ export class BattleView extends Component {
         this.m_DropNodes.set(drop.id, node);
     }
 
-    /** 掉落物：磁吸 → 拾取 → 超时消失 */
+    /**
+     * 掉落物：**随世界滚动下移** → 磁吸 → 拾取 / 越俯冲线自动收取 → 超时消失。
+     *
+     * v1.10：掉落物是「**世界里的静止物体**」—— 散落偏移在生成时（`addDrop()`）算一次并
+     * 烘进 `drop.x / drop.y`，之后**不再重算**（所以不会每帧抖动）；每帧的屏幕位移**全部**
+     * 来自 `core/DropSim.ts` 的 `stepDrop()`，而它消费的 `m_DropWorld.scrollDelta` 就是
+     * 敌人 / 背景用的**同一个** `m_ScrollDelta` → 三者**严格锁步**。
+     *
+     * 世界暂停（任一敌人停住）时 `m_ScrollDelta = 0` → 掉落物**一起停**（恢复后不跳位）；
+     * 而**磁吸照常**：磁吸是**玩家侧**行为、不是世界滚动（与"俯冲不受世界暂停影响"同口径，
+     * 见策划案附录 K-3），在 `stepDrop()` 里它**叠加**在滚动位移之上。
+     *
+     * 结算只有**一条**路径：`stepDrop()` 返回 `Collected`（正常拾取 **或** 越俯冲线自动收取，
+     * 两者共用同一个结果值）→ 一律走既有的 `collectDrop()`；`Expired` 只移除、不结算（§11.3）。
+     */
     private updateDrops(d: number): void {
+        // 与 updateEnemies() 完全对称：每帧把最新的玩家位置与**同一个**世界滚动位移写进仿真世界
+        this.m_DropWorld.playerX = this.m_PlayerX;
+        this.m_DropWorld.playerY = this.m_PlayerY;
+        // 磁吸半径含技能 / 外围加点加成 → 每帧现算
+        this.m_DropWorld.magnetRadius = GameTuning.magnetRadius + this.m_Stats.magnetRadiusBonus;
+        this.m_DropWorld.scrollDelta = this.m_ScrollDelta;
+
         if (this.m_Drops.length === 0) return;
-        const magnetRadius = GameTuning.magnetRadius + this.m_Stats.magnetRadiusBonus;
-        const collected: number[] = [];
+        const removed: number[] = [];
 
         for (let i = 0; i < this.m_Drops.length; i++) {
             const drop = this.m_Drops[i];
-            drop.life -= d;
-            if (drop.life <= 0) {
-                collected.push(drop.id); // 超时也走同一条移除路径
+            const outcome = stepDrop(drop, d, this.m_DropWorld);
+
+            if (outcome === DropOutcome.Collected) {
+                this.collectDrop(drop); // ← 唯一结算入口：拾取与"越俯冲线自动收取"共用它
+                removed.push(drop.id);
                 continue;
             }
-
-            const dist = distance(drop.x, drop.y, this.m_PlayerX, this.m_PlayerY);
-            if (!drop.magnetized && dist <= magnetRadius) drop.magnetized = true;
-
-            if (drop.magnetized && dist > GameTuning.pickupRadius) {
-                const step = GameTuning.magnetSpeed * d;
-                const ratio = Math.min(1, step / Math.max(dist, 0.001));
-                drop.x += (this.m_PlayerX - drop.x) * ratio;
-                drop.y += (this.m_PlayerY - drop.y) * ratio;
-            }
-
-            if (dist <= GameTuning.pickupRadius) {
-                this.collectDrop(drop);
-                collected.push(drop.id);
+            if (outcome === DropOutcome.Expired) {
+                removed.push(drop.id); // 超时也走同一条移除路径（移除但**不**结算）
                 continue;
             }
 
@@ -1589,10 +1629,10 @@ export class BattleView extends Component {
             if (node && node.isValid) setPos(node, drop.x, drop.y);
         }
 
-        if (collected.length > 0) {
-            const idSet = new Set(collected);
+        if (removed.length > 0) {
+            const idSet = new Set(removed);
             this.m_Drops = this.m_Drops.filter(drop => !idSet.has(drop.id));
-            collected.forEach(id => {
+            removed.forEach(id => {
                 const node = this.m_DropNodes.get(id);
                 if (node && node.isValid) node.destroy();
                 this.m_DropNodes.delete(id);
@@ -1880,7 +1920,7 @@ export class BattleView extends Component {
             const bg = this.m_BackgroundUsesNode
                 ? `真实美术 ${this.m_BackgroundTiles.length}块 周期${this.m_BackgroundTileSpacing.toFixed(0)} 系数${this.backgroundSpaceScaleNow().toFixed(2)}`
                 : `网格 ${this.m_BackgroundTiles.length}块`;
-            this.m_DebugLabel.string = `${describeStats(stats)}　敌 ${this.m_Enemies.length}　弹 ${this.m_Bullets.length}　素材 ${gameArtCount(this.m_Art)}/${gameArtTotal()}` +
+            this.m_DebugLabel.string = `${describeStats(stats)}　敌 ${this.m_Enemies.length}　弹 ${this.m_Bullets.length}　掉 ${this.m_Drops.length}　素材 ${gameArtCount(this.m_Art)}/${gameArtTotal()}` +
                 `　背景 ${bg}　滚 ${this.m_ScrollY.toFixed(0)}/${this.backgroundFieldPeriod().toFixed(0)}　d ${this.m_ScrollDelta.toFixed(2)}`;
         }
         if (this.m_PendingLevelUps > 0 && !this.m_OverlayPaused && !this.m_Finished) {

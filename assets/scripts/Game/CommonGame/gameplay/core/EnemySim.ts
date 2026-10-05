@@ -11,26 +11,26 @@
 
 import { Box, EnemyRuntime, EnemyState } from './GameTypes';
 import { GameTuning } from './GameTuning';
+import { WorldScrollConsumer } from './ScrollWorld';
 import { boxFromCells, distance } from './BoardMath';
 import { diveDamage } from './MathModels';
 
-/** 敌人仿真需要的外部信息 */
-export interface EnemyWorld {
+/**
+ * 敌人仿真需要的外部信息
+ *
+ * `scrollDelta` 来自 `WorldScrollConsumer`（**必填**，见 core/ScrollWorld.ts）：
+ * v1.10 起敌人**不再自己下落**（不再用 `enemy.speed × dt`），Falling 分支一律
+ * `enemy.y -= world.scrollDelta`。该值由 `BattleView` 的**唯一滚动源**给出
+ * （= 当前波 `waveScaling(wave).fallSpeed × dt`，**世界暂停时为 0**），
+ * 与背景、掉落物用的是**同一个值** → 三者永远锁步。
+ *
+ * ⚠️ 故意做成**必填**：这样"另算一套速度"在编译期就过不去。
+ * 俯冲（Diving）是敌人**自身**的扑击动作、不是世界滚动，仍走 `diveSpeed`。
+ */
+export interface EnemyWorld extends WorldScrollConsumer {
     /** 玩家当前位置 */
     playerX: number;
     playerY: number;
-    /**
-     * 本帧**世界滚动位移** px（> 0 = 世界向下滚）。
-     *
-     * v1.10：敌人**不再自己下落**（不再用 `enemy.speed × dt`），Falling 分支一律
-     * `enemy.y -= world.scrollDelta`。该值由 `BattleView` 的**唯一滚动源**给出
-     * （= 当前波 `waveScaling(wave).fallSpeed × dt`，**世界暂停时为 0**），
-     * 与背景用的是**同一个值** → 敌人与背景永远锁步。
-     *
-     * ⚠️ 故意做成**必填**：这样"另算一套速度"在编译期就过不去。
-     * 俯冲（Diving）是敌人**自身**的扑击动作、不是世界滚动，仍走 `diveSpeed`。
-     */
-    scrollDelta: number;
     /** 俯冲撞到玩家时的回调（结算伤害，由玩法层处理） */
     onDiveHitPlayer?(enemy: EnemyRuntime, damage: number): void;
     /** 敌人抵达俯冲终点（消失在屏幕外）时的回调 */
