@@ -121,6 +121,12 @@ export const GameTuning = {
     // ─────────── 关卡生成与下落（§9） ───────────
     /** 每关波数（占位默认值，正式值走 Wave 表） */
     wavesPerLevel: 8,
+    /**
+     * 换波间隔（s）：本波敌人**全部生成完毕**（最后一个敌人出生）后，再等这么久才出下一波。
+     * ⚠️ 「出完」不等于「打完」—— 场上残留的敌人会和下一波同场，波次可以重叠。
+     * 见 BattleView.updateWaveFlow()。
+     */
+    waveInterval: 10,
     /** 第 1 波行数 */
     baseRowsPerWave: 3,
     /** 每波行数增量 */

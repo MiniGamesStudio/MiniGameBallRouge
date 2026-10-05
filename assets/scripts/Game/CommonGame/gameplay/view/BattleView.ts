@@ -121,8 +121,6 @@ const DMG_PLAYER = new Color(255, 92, 92, 255);
 const DMG_PLAYER_CRIT = new Color(255, 60, 200, 255);
 /** 飘字描边色（需求：描边 + 加粗） */
 const DMG_OUTLINE = new Color(20, 12, 0, 255);
-/** 波次之间的喘息时间 */
-const WAVE_INTERVAL = 1.2;
 /** 调试 HUD（显示本局生效数值，方便对着策划案核数值） */
 const SHOW_DEBUG_HUD = true;
 
@@ -1667,22 +1665,29 @@ export class BattleView extends Component {
         }
     }
 
-    /** 一波打完 → 下一波；全部波次打完 → 过关 */
+    /** 一波出完 → 下一波；全部波次出完 → 过关 */
     private updateWaveFlow(d: number): void {
-        const spawnedAll = this.m_SpawnIndex >= this.m_SpawnEvents.length;
-        if (!spawnedAll || this.m_Enemies.length > 0) {
+        // 「出完」= 本波敌人**全部生成完毕**（不要求场上清空）：
+        // 最后一个敌人出生的那一刻开始计时，满 waveInterval 就出下一波。
+        // ⚠️ 因此波次**可以重叠** —— 上一波没打完的敌人会和下一波怪同场。
+        if (this.m_SpawnIndex < this.m_SpawnEvents.length) {
             this.m_WaveClearTimer = 0;
             return;
         }
 
         this.m_WaveClearTimer += d;
-        if (this.m_WaveClearTimer < WAVE_INTERVAL) return;
-        this.m_WaveClearTimer = 0;
+        if (this.m_WaveClearTimer < GameTuning.waveInterval) return;
 
         if (this.m_Wave >= GameTuning.wavesPerLevel) {
+            // 最后一波「出完」只是不再有新怪，不等于打完：场上还有敌人就不结算，
+            // 计时保留，等清空后的下一帧立即过关（不再多等一个 waveInterval）。
+            if (this.m_Enemies.length > 0) return;
+            this.m_WaveClearTimer = 0;
             this.finishLevel();
             return;
         }
+
+        this.m_WaveClearTimer = 0;
         this.startWave(this.m_Wave + 1);
     }
 
