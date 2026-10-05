@@ -29,6 +29,8 @@ export class GamePanel extends UIBase {
     m_PauseBtn: Button = null;
     @property(RichText)
     m_LevelText: RichText = null;
+    @property(Node)
+    m_GameBg: Node = null;
 
     // —— 以下 3 个是"面板自身"的配置，与玩法数值无关，保留在 prefab 里可调 ——
     @property({ tooltip: '默认打开的关卡，从 1 开始' })
@@ -82,6 +84,10 @@ export class GamePanel extends UIBase {
 
         this.m_Battle = await BattleView.create(this.m_GameRoot, {
             level,
+            // 滚动背景用面板自己的真实背景节点 m_GameBg（v1.10 起）：
+            // 在这里**显式注入**（BattleOptions 字段），BattleView 不做 getChildByName 之类的
+            // 字符串查找（脆弱），也不需要"先建网格再换贴图"的二次重建（那样第一帧会跳位）。
+            backgroundNode: this.m_GameBg,
             onRestart: () => this.restartCurrentLevel(),
             onExit: () => this.goBackMainPanel(),
         });

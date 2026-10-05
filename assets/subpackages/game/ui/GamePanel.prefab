@@ -1893,6 +1893,9 @@
     "m_LevelText": {
       "__id__": 61
     },
+    "m_GameBg": {
+      "__id__": 3
+    },
     "m_StartLevel": 1,
     "m_DesignWidth": 750,
     "m_DesignHeight": 1334,

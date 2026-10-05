@@ -304,6 +304,9 @@ describe('敌人俯冲（需求 3 / §9.4）', () => {
         const world = {
             playerX: 0,
             playerY: GameTuning.diveLineY + 20,
+            // v1.10：敌人的 Falling 位移只来自 world.scrollDelta（与背景同一个 delta）。
+            // 这两条用例测的是**俯冲流程**（俯冲走 diveSpeed，与世界滚动无关），所以传 0。
+            scrollDelta: 0,
             onDiveHitPlayer: (_enemy: EnemyRuntime, damage: number) => { events.push(damage); },
         };
 
@@ -335,6 +338,9 @@ describe('敌人俯冲（需求 3 / §9.4）', () => {
         const world = {
             playerX: 0,
             playerY: GameTuning.diveLineY + 20,
+            // v1.10：敌人的 Falling 位移只来自 world.scrollDelta（与背景同一个 delta）。
+            // 这两条用例测的是**俯冲流程**（俯冲走 diveSpeed，与世界滚动无关），所以传 0。
+            scrollDelta: 0,
             onDiveHitPlayer: (_enemy: EnemyRuntime, damage: number) => { events.push(damage); },
         };
 

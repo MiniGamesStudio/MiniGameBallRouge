@@ -3,7 +3,7 @@
  *
  * 状态机（策划案 §9）：
  *   Spawning  出生缩放动画（不参与碰撞）
- *   Falling   随波次缓慢下落
+ *   Falling   随**世界滚动**下移（v1.10：敌人自身不动，被背景带着走，见 core/ScrollWorld.ts）
  *   Telegraph 自身矩形底边越过俯冲线后，等待 diveTelegraph 秒（此期间可被击杀）
  *   Diving    放大后快速飞向玩家并缩小，抵达玩家即造成伤害并消失
  *   Dead      已死亡，等待回收
@@ -19,6 +19,18 @@ export interface EnemyWorld {
     /** 玩家当前位置 */
     playerX: number;
     playerY: number;
+    /**
+     * 本帧**世界滚动位移** px（> 0 = 世界向下滚）。
+     *
+     * v1.10：敌人**不再自己下落**（不再用 `enemy.speed × dt`），Falling 分支一律
+     * `enemy.y -= world.scrollDelta`。该值由 `BattleView` 的**唯一滚动源**给出
+     * （= 当前波 `waveScaling(wave).fallSpeed × dt`，**世界暂停时为 0**），
+     * 与背景用的是**同一个值** → 敌人与背景永远锁步。
+     *
+     * ⚠️ 故意做成**必填**：这样"另算一套速度"在编译期就过不去。
+     * 俯冲（Diving）是敌人**自身**的扑击动作、不是世界滚动，仍走 `diveSpeed`。
+     */
+    scrollDelta: number;
     /** 俯冲撞到玩家时的回调（结算伤害，由玩法层处理） */
     onDiveHitPlayer?(enemy: EnemyRuntime, damage: number): void;
     /** 敌人抵达俯冲终点（消失在屏幕外）时的回调 */
@@ -75,7 +87,9 @@ export function stepEnemy(enemy: EnemyRuntime, dt: number, world: EnemyWorld): E
         case EnemyState.Falling: {
             // 被同列队首挡住时原地不动（队首恢复移动或被消灭后自动继续下落）
             if (enemy.blocked) break;
-            enemy.y -= enemy.speed * dt;
+            // v1.10：位移量来自**世界滚动**（与背景同一个 delta），不再用 enemy.speed × dt。
+            // 世界暂停（任一敌人停住）时 scrollDelta = 0 → 这一句天然什么都不做。
+            enemy.y -= world.scrollDelta;
             if (hasCrossedDiveLine(enemy)) {
                 // 越线后进入 1 s 判定等待：站住不动，此时仍可被击杀（§9.4）
                 enemy.state = EnemyState.Telegraph;
@@ -144,10 +158,17 @@ export function stepEnemy(enemy: EnemyRuntime, dt: number, world: EnemyWorld): E
  * 全场停止（需求）：只要**任意一个**敌人停住不动（到底站住 Telegraph、或被冰冻 / 眩晕等技能定住 frozen），
  * **所有**敌人一律停止下落；该敌人被消灭或恢复后，全场自动恢复移动。
  * 每帧调用一次，纯函数，原地改写 enemy.blocked。
+ *
+ * v1.10：这个返回值就是**世界暂停标志** —— `BattleView.updateScroll()` 把它交给
+ * `ScrollWorld.effectiveScrollDelta()`，于是暂停时 `delta = 0`，
+ * **背景与敌人（整个世界）一起停住**，恢复后一起继续。
+ *
+ * @returns 本帧是否处于「世界暂停」（true = 有敌人停住 → 世界滚动 delta 必须为 0）
  */
-export function applyStopBlocking(enemies: EnemyRuntime[]): void {
+export function applyStopBlocking(enemies: EnemyRuntime[]): boolean {
     const anyStopped = enemies.some(isEnemyStopped);
     for (const e of enemies) e.blocked = anyStopped;
+    return anyStopped;
 }
 
 /** 是否"停住不动"：只看结果、不问原因（到底站住 Telegraph，或被技能定住 frozen） */

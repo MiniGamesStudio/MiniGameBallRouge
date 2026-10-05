@@ -132,7 +132,13 @@ export interface EnemyRuntime {
     y: number;
     hp: number;
     maxHp: number;
-    /** 下落速度 px/s（已含波次成长） */
+    /**
+     * 世界滚动速度 px/s（已含波次成长）。
+     *
+     * v1.10 起敌人**不再自己下落**：`stepEnemy` 的 Falling 分支用 `world.scrollDelta`
+     * 位移（与背景**同一个 delta**），本字段只是"这只怪属于哪一档世界速度"的记录
+     * （= 出生那一波的 `waveScaling(wave).fallSpeed`，同一波内恒定）。
+     */
     speed: number;
     state: EnemyState;
     /** 当前状态已持续时间 */

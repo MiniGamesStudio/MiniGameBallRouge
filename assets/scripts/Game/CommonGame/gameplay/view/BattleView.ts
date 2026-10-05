@@ -9,9 +9,15 @@
  *   1. 所有数值来自 core/GameTuning（**不要**在这里挂 @property，见策划案 §14.0）；
  *   2. 玩法规则都在 core/ 里（纯逻辑、可 L1 单测），这里只做"读状态 + 摆节点"；
  *   3. 素材全部来自 bundle `game`（占位美术，见 view/GameArt.ts）。
+ *
+ * v1.10 滚动世界（需求：敌人"生成后不动"、随背景一起向下移动、背景连续循环）：
+ *   世界运动只有**一个来源** —— `updateScroll()` 里的 `m_ScrollDelta` / `m_ScrollY`
+ *   （由 core/ScrollWorld.ts 的纯函数算出）。敌人（`m_EnemyWorld.scrollDelta`）与背景
+ *   （`updateBackground()`）都只消费它，谁都不许自己算速度；世界暂停（任一敌人被停住）
+ *   时它等于 0，于是背景与敌人**一起**停。详见这两个方法的注释。
  */
 
-import { _decorator, Button, Color, Component, EventTouch, Graphics, Input, Label, Node, SpriteFrame, UITransform, Vec3, input } from 'cc';
+import { _decorator, Button, Color, Component, EventTouch, Graphics, Input, Label, Node, Rect, Size, Sprite, SpriteFrame, UIOpacity, UITransform, Vec3, Widget, input, instantiate } from 'cc';
 import { GameTuning } from '../core/GameTuning';
 import {
     BulletRuntime,
@@ -24,7 +30,9 @@ import {
 import { IRandom, RandomUtil, SeededRandom } from '../core/Rng';
 import {
     boxFromCells,
+    boardLeftX,
     circleHitsBox,
+    clamp,
     clampCursorPosition,
     clampPlayerPosition,
     distance,
@@ -32,6 +40,19 @@ import {
 } from '../core/BoardMath';
 import { BulletWorld, aimVelocity, createBullet, stepBullet } from '../core/BulletSim';
 import { EnemyWorld, applyStopBlocking, enemyVisualScale, isDead, isHittable, killEnemy, pickAutoAimTarget, stepEnemy } from '../core/EnemySim';
+import {
+    FALLBACK_PATTERN_HEIGHT,
+    SeamFadeStrip,
+    advanceWorldScroll,
+    backgroundSpaceScale,
+    backgroundTileBottomY,
+    backgroundTileCount,
+    gridAlignedBottom,
+    resolvePatternHeight,
+    seamFadeStripCount,
+    seamFadeStrips,
+    wrapBackgroundOffset,
+} from '../core/ScrollWorld';
 import { buildDashSegments, traceAimGuide } from '../core/AimGuide';
 import {
     catchRadiusWithBonus,
@@ -39,6 +60,7 @@ import {
     enemyExpValue,
     enemySoulValue,
     enemySuperCrystalCount,
+    waveScaling,
 } from '../core/MathModels';
 import { EnemySpawnSpec, SpawnEvent, buildSpawnSchedule, buildWavePlan, createEnemyRuntime } from '../core/WaveBuilder';
 import {
@@ -98,6 +120,16 @@ const WAVE_INTERVAL = 1.2;
 /** 调试 HUD（显示本局生效数值，方便对着策划案核数值） */
 const SHOW_DEBUG_HUD = true;
 
+/**
+ * 背景底色（模块常量，按需求不放进 `GameTuning`）：深蓝黑，低对比度，
+ * 让半透明的网格线看得见，同时不与敌人底图 / 瞄准射线抢视觉。
+ */
+const BG_BASE_COLOR = new Color(14, 18, 28, 255);
+/** 背景网格线颜色（alpha 由 `GameTuning.backgroundGridAlpha` 覆盖，默认 26 = 很低对比度） */
+const BG_GRID_COLOR = new Color(130, 180, 235, 255);
+/** 背景网格线宽 px（很细，只做"格子在动"的参照） */
+const BG_GRID_WIDTH = 2;
+
 /** 结算数据 */
 export interface BattleResult {
     level: number;
@@ -114,6 +146,15 @@ export interface BattleOptions {
     level: number;
     /** 随机种子（不传则用时间戳），同种子关卡完全一致 */
     seed?: number;
+    /**
+     * **滚动背景用的真实背景节点**（面板的 `m_GameBg`，v1.10 起）。
+     *
+     * 由 GamePanel **显式注入**：BattleView 绝不做 `getChildByName('m_GameBg')` 之类的
+     * 字符串查找（改名/换层级就静默失效，脆弱），也不在开局后再"换背景"
+     * （那会导致第一帧跳位 + 二次重建）。
+     * 不传 / 传 null / 该节点上没有可用的 Sprite 贴图 → 退回程序化网格兜底（见 createBackground）。
+     */
+    backgroundNode?: Node;
     /** 失败回调 */
     onGameOver?: (result: BattleResult) => void;
     /** 过关回调 */
@@ -122,6 +163,16 @@ export interface BattleOptions {
     onRestart?: () => void;
     /** 点「返回主页」 */
     onExit?: () => void;
+}
+
+/**
+ * 背景块的贴图帧（**所有块共用同一批**，只在开局造一次）：
+ * 主图 `main` + 淡入淡出条带 `strips`（`strips.length === 0` 表示不做淡出 → 直接用原始帧）。
+ */
+interface BackgroundFrames {
+    main: SpriteFrame;
+    strips: SeamFadeStrip[];
+    stripFrames: SpriteFrame[];
 }
 
 /** 掉落物外观（没有水晶素材，用 Graphics 画圆代替） */
@@ -165,6 +216,60 @@ export class BattleView extends Component {
     private m_HudRoot: Node = null;
     private m_PlayerNode: Node = null;
     private m_CursorNode: Node = null;
+
+    // ─────────── 滚动世界（v1.10）：唯一滚动源 ───────────
+    /** **网格兜底**路径的背景层（`m_FieldRoot` 的**第一个**子节点 = 最底层）；真实美术路径为 null */
+    private m_BackgroundRoot: Node = null;
+    /**
+     * 拼接的背景块（每块的**底边**随 `m_ScrollY` 一起摆位）。
+     * 真实美术路径下第 0 块就是 `m_GameBg` **本体**（不复制它的数据，只把它当第 0 块用）。
+     */
+    private m_BackgroundTiles: Node[] = [];
+    /**
+     * 第 0 块背景的**底边** y，开局算一次就固定：
+     * · 网格路径：格子对齐（相位 = 出生线，见 `gridAlignedBottom`），单位 = 场空间；
+     * · 真实美术路径：`m_GameBg` **原位置的底边**（于是第一帧它一动不动），单位 = 面板空间。
+     */
+    private m_BackgroundBottomY: number = 0;
+
+    // ─── 真实美术路径（v1.10 起）───
+    /** 注入的真实背景节点（`m_GameBg`）；未注入 / 不可用时为 null */
+    private m_BackgroundNode: Node = null;
+    /** 真实背景节点所在的**面板空间**父节点（摆位与空间换算都用它） */
+    private m_BackgroundParent: Node = null;
+    /** 是否走真实美术路径（决定 `updateBackground()` 用哪套坐标/摆位） */
+    private m_BackgroundUsesNode: boolean = false;
+    /** 第 0 块（= `m_GameBg`）的纵向锚点，用来把"底边"换算成节点 position */
+    private m_BackgroundTileAnchorY: number = 0.5;
+    /** 一块背景在**节点本地单位**里的高度（= `m_GameBg.contentSize.height`，淡入淡出条带按它布局） */
+    private m_BackgroundTileLocalHeight: number = 0;
+    /** 一块背景在**面板空间**里的显示高度（= 本地高度 × |scale|；把底边换算成 position 用） */
+    private m_BackgroundTileDisplayHeight: number = 0;
+    /** 相邻块的底边间距（面板空间单位）——**自动时就等于显示高度**，块与块正好接上 */
+    private m_BackgroundTileSpacing: number = 0;
+    /** 第 0 块上的淡入淡出条带节点（它本体不销毁，收尾时要显式清掉） */
+    private m_BackgroundFadeNodes: Node[] = [];
+    /** 原始贴图帧 / 原始尺寸 / 原始位置 / 原始 Widget —— 收尾时把 `m_GameBg` 还原成初始状态 */
+    private m_BackgroundSourceFrame: SpriteFrame = null;
+    private m_BackgroundSourceWidth: number = 0;
+    private m_BackgroundSourceHeight: number = 0;
+    private m_BackgroundSourcePos: Vec3 = null;
+    private m_BackgroundSourceWidget: Widget = null;
+    private m_BackgroundSourceWidgetEnabled: boolean = true;
+    /** 网格兜底路径是否把注入的真实背景节点藏起来了，以及它原来的 `active` */
+    private m_BackgroundNodeHidden: boolean = false;
+    private m_BackgroundSourceActive: boolean = true;
+
+    /**
+     * **本帧世界滚动位移** px（>= 0；世界暂停时为 0）。
+     * 背景与敌人**共用这一个值** —— 绝不允许任何一方另算速度。
+     */
+    private m_ScrollDelta: number = 0;
+    /**
+     * **累计滚动量** px（**场空间**单位）。只在这里累计、且按背景周期回绕：
+     * 它同时就是"背景拼接偏移"的来源，长期运行（几小时）也不会出现浮点精度漂移。
+     */
+    private m_ScrollY: number = 0;
     /** 瞄准浮标外围圆半径 = 玩家图显示半径 + cursorOrbitGap（开局创建玩家时算出） */
     private m_OrbitRadius = 0;
     /** 伤害飘字（需求：敌人/玩家、普通/暴击颜色不同） */
@@ -251,7 +356,64 @@ export class BattleView extends Component {
         this.m_Overlay = null;
         this.m_EnemyFeedback.clear();
         this.m_PlayerFeedback = null;
+        // 真实美术背景的克隆块挂在**面板**上（不在本节点子树里），必须显式收尾
+        this.releaseNodeBackground();
         // 素材走 GameArt 内部的常驻缓存，这里不释放（避免释放路径写错导致贴图提前失效）
+        // 同理：背景块的裁剪帧共用原贴图，也不 destroy（只丢弃引用，让 GC 处理）
+    }
+
+    /**
+     * 背景**收尾**：销毁克隆块 / 条带，并把 `m_GameBg` **还原成开局前的样子**。
+     *
+     * 为什么必须做（否则重开关卡会叠加或串味）：
+     *   ① 克隆块是 `m_GameBg` 的**兄弟节点**（挂在面板上，不在 BattleView 子树里）
+     *      → BattleView 销毁时它们**不会**跟着消失，必须显式 `destroy()`；
+     *   ② 面板本身不重建（`GamePanel.restartCurrentLevel()` 只是销毁 BattleView 再重开），
+     *      `m_GameBg` 会留在面板上 → 被我们改过的贴图帧 / 尺寸 / 位置 / Widget 开关 / 隐藏状态
+     *      都要还原，下一次开局才是干净的初始状态。
+     *
+     * 网格兜底路径下没有克隆块，但仍然要还原"被藏起来的真实背景节点"（见 createGridBackground）。
+     */
+    private releaseNodeBackground(): void {
+        const source = this.m_BackgroundNode;
+
+        // ① 销毁克隆块（真实美术路径才有；它们是面板的子节点，不随本节点一起销毁）
+        if (this.m_BackgroundUsesNode) {
+            for (let i = 0; i < this.m_BackgroundTiles.length; i++) {
+                const tile = this.m_BackgroundTiles[i];
+                if (tile && tile.isValid && tile !== source) tile.destroy();
+            }
+        }
+        // ② 本体的淡入淡出条带（本体不销毁，得显式清掉）
+        for (let i = 0; i < this.m_BackgroundFadeNodes.length; i++) {
+            const fade = this.m_BackgroundFadeNodes[i];
+            if (fade && fade.isValid) fade.destroy();
+        }
+
+        // ③ 还原注入节点：网格路径下只是"重新显示出来"，真实美术路径还要还原被改过的贴图/尺寸/位置/Widget
+        if (source && source.isValid) {
+            const sprite = source.getComponent(Sprite);
+            if (sprite && this.m_BackgroundSourceFrame) sprite.spriteFrame = this.m_BackgroundSourceFrame;
+            const transform = source.getComponent(UITransform);
+            if (transform && this.m_BackgroundSourceWidth > 0 && this.m_BackgroundSourceHeight > 0) {
+                transform.setContentSize(this.m_BackgroundSourceWidth, this.m_BackgroundSourceHeight);
+            }
+            if (this.m_BackgroundSourcePos) source.setPosition(this.m_BackgroundSourcePos);
+            if (this.m_BackgroundSourceWidget && this.m_BackgroundSourceWidget.isValid) {
+                this.m_BackgroundSourceWidget.enabled = this.m_BackgroundSourceWidgetEnabled;
+            }
+            if (this.m_BackgroundNodeHidden) source.active = this.m_BackgroundSourceActive;
+        }
+
+        this.m_BackgroundTiles = [];
+        this.m_BackgroundFadeNodes = [];
+        this.m_BackgroundUsesNode = false;
+        this.m_BackgroundNodeHidden = false;
+        this.m_BackgroundSourceFrame = null;
+        this.m_BackgroundSourcePos = null;
+        this.m_BackgroundSourceWidget = null;
+        this.m_BackgroundSourceWidth = 0;
+        this.m_BackgroundSourceHeight = 0;
     }
 
     /** 外部暂停（面板打开暂停菜单时调用） */
@@ -277,6 +439,16 @@ export class BattleView extends Component {
         this.m_FieldRoot = makeNode(this.node, 'Field');
         this.m_HudRoot = makeNode(this.node, 'Hud');
 
+        // 真实背景节点由 GamePanel 显式注入（不做字符串查找）；null / 空 → 走网格兜底
+        this.m_BackgroundNode =
+            options.backgroundNode && options.backgroundNode.isValid ? options.backgroundNode : null;
+
+        // 背景必须**最先**建：兄弟序 = 渲染序，第一个子节点才在最底层。
+        // 于是层级恒为「背景 < 瞄准射线 < 敌人 < 子弹/掉落/飘字 < 玩家（每帧被提到最上）」，
+        // 而 HUD 在 m_HudRoot（Field 的后一个兄弟节点）→ 背景永远盖不到 HUD。
+        // 真实美术路径的块是 m_GameBg 的**兄弟**（挂在面板上），仍是面板第一个子节点起的那一组
+        // → 同样在所有战斗元素与 HUD 之下（见 createNodeBackground 的层级说明）。
+        this.createBackground();
         this.createPlayerAndCursor();
         this.createHud();
         this.createWorlds();
@@ -290,6 +462,356 @@ export class BattleView extends Component {
 
         this.startWave(1);
         this.showTalentChoice();
+    }
+
+    /**
+     * 建**滚动世界**的背景层（最底层）：铺满可视区、随世界滚动向下移动、无缝循环。
+     *
+     * 两条路径，**绝不同时出现**：
+     *   ① **真实美术（默认）**：以面板上的 `m_GameBg` 为第 0 块、克隆出足够块数（`createNodeBackground`），
+     *      程序化网格**完全不创建**；
+     *   ② **程序化网格（兜底）**：`backgroundUseNodeSprite=false` / 没注入节点 / 节点上没有可用的
+     *      Sprite 贴图时使用（`createGridBackground`，v1.10 的原始实现）。
+     *
+     * `backgroundScrollEnabled=false` → **不创建任何背景层**（保持 v1.10 语义：世界滚动照常驱动敌人与
+     * 波次推进，只是画面上少了"滚动参照物"；它**不是**"背景不滚"——那会变成两套速度，正是要消灭的东西）。
+     */
+    private createBackground(): void {
+        if (!GameTuning.backgroundScrollEnabled) return;
+
+        const node = this.m_BackgroundNode;
+        if (GameTuning.backgroundUseNodeSprite && node) {
+            try {
+                if (this.createNodeBackground(node)) return;
+            } catch (error) {
+                // 真实美术初始化意外失败也不能让整局开不起来：退回网格兜底。
+                // 此时节点可能已被改到一半 → 网格路径会把它整个藏起来（见 createGridBackground）。
+                console.warn('[BattleView] 真实美术背景初始化失败，退回程序化网格', error);
+            }
+        }
+
+        this.createGridBackground();
+    }
+
+    /**
+     * **真实美术路径**：以 `m_GameBg` 为**第 0 块**（不复制它的数据），克隆出足够块数，
+     * 整体随 `m_ScrollY` 下移并按周期回绕。
+     *
+     * 关键决策（写在这里，避免以后被"简化"掉）：
+     *   · **周期 = 节点实际显示高度**（`contentSize.height × |scale|`，见 `resolvePatternHeight`；
+     *     `backgroundPatternHeight` 非 0 时可显式覆盖）——块与块正好接上，不需要人工维护常数；
+     *   · **块数由 `backgroundTileCount()` 推**（可视高 ÷ 周期 + 1，那 +1 是回绕余量），
+     *     **不凭手感取 2**：本配置（周期 = 可视高 1334、基准 -667）算出 **2 块**，
+     *     且这 2 块在任意 offset ∈ [0, 周期) 下并集都盖满 [-667, 667]
+     *     （offset → 周期 时并集 = [-2001, 667]，正好还压住屏幕顶边）；
+     *   · **基准位置 = `m_GameBg` 原位置**：第 0 块就摆在它原来的地方 → **第一帧不跳位**；
+     *   · **同父同级 + 最底层**：克隆块插在 `m_GameBg` 之后（它本来就是面板的第一个子节点）
+     *     → 渲染顺序仍在所有战斗元素与 HUD 之下；
+     *   · **空间换算**：块活在面板空间（不被 `m_GameRoot` 缩放），滚动量要乘
+     *     `backgroundSpaceScale()`，否则窄高屏（fitHeight 下 `m_GameRoot` 被 contain 缩到 ~0.82）
+     *     会出现「背景比敌人滚得快」的锁步穿帮；
+     *   · **接缝**：贴图不可平铺（实测 6.27×），所以裁掉末尾若干行 + 顶部 alpha 渐变叠回
+     *     （见 `buildBackgroundFrames`），让接缝两边在原图里**本来就是相邻行**。
+     *
+     * @returns 是否成功接管（false = 调用方退回程序化网格兜底）
+     */
+    private createNodeBackground(node: Node): boolean {
+        const transform = node.getComponent(UITransform);
+        const sprite = node.getComponent(Sprite);
+        const frame = sprite ? sprite.spriteFrame : null;
+        const parent = node.parent;
+        if (!transform || !sprite || !frame || !frame.texture || !parent) return false;
+
+        const parentTransform = parent.getComponent(UITransform);
+        // 尺寸：等价于 Widget 的"铺满父节点"。**显式设一次**，不再依赖 Widget 的执行时机
+        const width = parentTransform && parentTransform.width > 0 ? parentTransform.width : transform.width;
+        const height = parentTransform && parentTransform.height > 0 ? parentTransform.height : transform.height;
+        if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return false;
+
+        // 先记录"原状"，收尾时要还原（面板不重建，重开关卡会再走一遍开局）
+        this.m_BackgroundSourceFrame = frame;
+        this.m_BackgroundSourceWidth = transform.width;
+        this.m_BackgroundSourceHeight = transform.height;
+        this.m_BackgroundSourcePos = node.position.clone();
+        this.m_BackgroundSourceWidget = node.getComponent(Widget);
+        this.m_BackgroundSourceWidgetEnabled = this.m_BackgroundSourceWidget
+            ? this.m_BackgroundSourceWidget.enabled
+            : false;
+
+        // Widget 的 alignMode = ALWAYS 会**每帧**把 y 拽回对齐位置，与滚动直接冲突 → 关掉。
+        // 尺寸上面已经显式设好了，所以关掉它不会丢失"铺满"的效果。
+        this.disableWidgetAlign(node);
+        transform.setContentSize(width, height);
+
+        const anchorY = Number.isFinite(transform.anchorY) ? transform.anchorY : 0.5;
+        const scaleY = Number.isFinite(node.scale.y) && node.scale.y !== 0 ? Math.abs(node.scale.y) : 1;
+        const displayHeight = height * scaleY;
+        // 相邻块底边间距：自动 = 块的显示高度（块正好接上）；显式覆盖时按调参值（可能出现重叠/空隙，由调参者负责）
+        const spacing = resolvePatternHeight(GameTuning.backgroundPatternHeight, height, node.scale.y);
+        this.m_BackgroundParent = parent;
+        this.m_BackgroundUsesNode = true;
+        this.m_BackgroundTileAnchorY = anchorY;
+        this.m_BackgroundTileLocalHeight = height;
+        this.m_BackgroundTileDisplayHeight = displayHeight;
+        this.m_BackgroundTileSpacing = spacing;
+        this.m_BackgroundTiles = [node];
+        this.m_BackgroundFadeNodes = [];
+        this.m_ScrollY = 0;
+
+        // 贴图帧（主图 + 淡入淡出条带；所有块共用，只造一次）
+        const frames = this.buildBackgroundFrames(frame, width);
+        if (frames) {
+            sprite.trim = true;
+            sprite.spriteFrame = frames.main;
+            // ⚠️ 本体的淡入淡出条带**必须等克隆完再加**（见下面的克隆循环）：
+            // `instantiate(node)` 会把子节点一起复制，先加就会让每个克隆块多出一套重复条带。
+        }
+
+        // 第 0 块的底边 = 它原位置的底边 → 第一帧一动不动
+        this.m_BackgroundBottomY = this.m_BackgroundSourcePos.y - anchorY * displayHeight;
+
+        // 块数：可视高 ÷ 周期 + 1（`backgroundTileCount` 的一般式，含回绕余量）
+        const viewHeight = parentTransform && parentTransform.height > 0 ? parentTransform.height : GameTuning.designHeight;
+        const parentAnchorY = parentTransform && Number.isFinite(parentTransform.anchorY) ? parentTransform.anchorY : 0.5;
+        const viewTop = (1 - parentAnchorY) * viewHeight;
+        const count = backgroundTileCount(viewTop - this.m_BackgroundBottomY, spacing);
+
+        // 克隆块：同父、紧跟第 0 块（保持最底层），共用同一批贴图帧
+        const baseIndex = node.getSiblingIndex();
+        for (let i = 1; i < count; i++) {
+            const clone = instantiate(node);
+            clone.name = `BgTile_${i}`;
+            this.disableWidgetAlign(clone);
+            const cloneTransform = clone.getComponent(UITransform);
+            if (cloneTransform) cloneTransform.setContentSize(width, height);
+            const cloneSprite = clone.getComponent(Sprite);
+            if (cloneSprite && frames) {
+                cloneSprite.trim = true;
+                cloneSprite.spriteFrame = frames.main;
+            }
+            if (frames) this.addSeamFadeStrips(clone, frames, width, false);
+            parent.addChild(clone);
+            clone.setSiblingIndex(baseIndex + i);
+            this.m_BackgroundTiles.push(clone);
+        }
+
+        // 克隆完再给**本体**补条带（顺序见上面注释：先加会被克隆复制成双份）
+        if (frames) this.addSeamFadeStrips(node, frames, width, true);
+
+        this.updateBackground();
+        // 裁掉末尾 fadeRows 行后，同一块高度里的内容变少 → 纵向被拉伸这么多次（很小，但要如实打出来）
+        const stretch = frames ? frame.rect.height / (frame.rect.height - GameTuning.backgroundSeamFadeRows) : 1;
+        console.log(
+            `[BattleView] 背景=真实美术 m_GameBg 块数=${count} 周期=${spacing.toFixed(2)} 拉伸=${stretch.toFixed(4)}× ` +
+                `贴图=${frame.rect.width}x${frame.rect.height} 淡出=${frames ? GameTuning.backgroundSeamFadeRows + '行×' + frames.strips.length + '条' : '关'}`
+        );
+        return true;
+    }
+
+    /** 关掉节点上的 Widget 对齐（`alignMode=ALWAYS` 会每帧改 y，与滚动冲突）；没有 Widget 就什么都不做 */
+    private disableWidgetAlign(node: Node): void {
+        const widget = node.getComponent(Widget);
+        if (widget) widget.enabled = false;
+    }
+
+    /**
+     * 造背景块的贴图帧：**主图**（裁掉末尾若干行）+ **淡入淡出条带**。
+     *
+     * ── 为什么必须裁帧，不能整图直接平铺 ──
+     * `background/game_bg` 是整屏插画、首尾不相接（实测接缝行差 = 相邻行平均差的 **6.27×**）。
+     * 交叉淡入淡出要求"接缝两边在原图里本来就是相邻行"，所以：主图只显示原图第 `0 .. H-fadeRows-1` 行，
+     * 每块**顶部**再用 alpha 从 1 降到 0 把被裁掉的那些行叠回来 → 块与块的接缝正好落在
+     * 「原图第 H-fadeRows-1 行 / 第 H-fadeRows 行」这一对**相邻行**上（实测 0.78×，比普通相邻行还小）。
+     *
+     * ── 坐标系（容易搞反，写清楚）──
+     * `SpriteFrame.rect.y` 的原点在图片**顶部**：引擎上传贴图时 `UNPACK_FLIP_Y_WEBGL=false`
+     * → v=0 就是图片第一行，而 `_calculateUV()` 把"较大的 v"分给节点的**下边**
+     * （`simple.ts` 里 `dataList[0]` = 左下角）。所以 `rect.y` 就是"从顶部数第几行"，
+     * 裁掉末尾 = 主图 `rect.y` 不变、高度变小；条带 `rect.y` = 主图行数 + 条带偏移。
+     *
+     * 任何一步不成立（开关关掉 / 贴图太小 / 帧造不出来）→ 返回 null，调用方退化成"整图平铺"（有接缝）。
+     */
+    private buildBackgroundFrames(frame: SpriteFrame, tileWidth: number): BackgroundFrames | null {
+        if (!GameTuning.backgroundSeamFade) return null;
+
+        const rect = frame.rect;
+        const textureHeight = rect.height;
+        const fadeRows = GameTuning.backgroundSeamFadeRows;
+        const contentRows = textureHeight - fadeRows;
+        if (!Number.isFinite(textureHeight) || textureHeight <= 0 || contentRows <= 0) return null;
+
+        // 主图铺满整块 → 每行显示高度；条带按"每条尽量 ≤ backgroundSeamFadeMaxStripPx"切分
+        const rowScale = this.m_BackgroundTileLocalHeight / contentRows;
+        const strips = seamFadeStrips(
+            textureHeight,
+            fadeRows,
+            seamFadeStripCount(fadeRows, rowScale, GameTuning.backgroundSeamFadeMaxStripPx),
+            this.m_BackgroundTileLocalHeight
+        );
+        if (strips.length === 0) return null;
+
+        try {
+            const main = this.makeCroppedFrame(frame, 0, contentRows);
+            const stripFrames: SpriteFrame[] = [];
+            for (let i = 0; i < strips.length; i++) {
+                stripFrames.push(this.makeCroppedFrame(frame, strips[i].rectY, strips[i].rectHeight));
+            }
+            return { main, strips, stripFrames };
+        } catch (error) {
+            // 造帧失败不能让背景整个消失：退回整图平铺（有接缝，但一定能看）
+            console.warn('[BattleView] 背景淡入淡出造帧失败，退回整图平铺', error);
+            return null;
+        }
+    }
+
+    /**
+     * 造一张**裁剪过的**贴图帧副本（只改显示内容，不动原帧 —— 原帧还挂在 `m_GameBg` 上，收尾要还原）。
+     *
+     * `originalSize` 设成裁剪后尺寸 + `offset` 归零 ⇒ 引擎算出的 `trimmedBorder` = 0
+     * ⇒ 无论 `Sprite.trim` 走哪条分支，几何都是"节点整块"（裁剪只影响 UV），不会画歪。
+     */
+    private makeCroppedFrame(source: SpriteFrame, rowOffset: number, rowHeight: number): SpriteFrame {
+        const rect = source.rect;
+        const copy = source.clone();
+        // ⚠️ 这里**故意**不 import cc 的 `Vec2`：本文件已经有一个 `Vec2`（core/GameTypes 的
+        // `{x,y}` 轻量类型），再 import 会撞名。就地 `set` 即可（getter 返回的是内部实例）。
+        copy.offset.set(0, 0);
+        copy.originalSize = new Size(rect.width, rowHeight);
+        // rect.y 的原点是图片顶部（见 buildBackgroundFrames 的说明）
+        copy.rect = new Rect(rect.x, rect.y + rowOffset, rect.width, rowHeight);
+        return copy;
+    }
+
+    /**
+     * 给一块背景补上**顶部淡入淡出条带**（每条一个常数 alpha，离散化线性渐变）。
+     *
+     * 条带是块的子节点 → 自动跟随块的位移与缩放；摆放以块的**顶边**为基准：
+     * 第 i 条的顶边距块顶边 `strip.offsetFromTop`，所以中心 y = 顶边 − offset − 高度/2。
+     * 主图本来就画着"原图第 0 行起"的内容，条带以 alpha 叠上去 ⇒
+     * 合成结果 = `(1-w)·主图行 + w·被裁掉的行`（w 从 1 线性降到 0）—— 正是交叉淡入淡出。
+     *
+     * @param isSource 是否是 `m_GameBg` 本体（它的条带要记下来，收尾时显式销毁）
+     */
+    private addSeamFadeStrips(tile: Node, frames: BackgroundFrames, tileWidth: number, isSource: boolean): void {
+        const topY = (1 - this.m_BackgroundTileAnchorY) * this.m_BackgroundTileLocalHeight;
+        for (let i = 0; i < frames.strips.length; i++) {
+            const strip = frames.strips[i];
+            const node = makeNode(tile, `SeamFade_${i}`);
+            const transform = node.addComponent(UITransform);
+            transform.setContentSize(tileWidth, strip.displayHeight);
+            const sprite = node.addComponent(Sprite);
+            sprite.spriteFrame = frames.stripFrames[i];
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            sprite.trim = true;
+            const opacity = node.addComponent(UIOpacity);
+            opacity.opacity = Math.round(clamp(strip.alpha, 0, 1) * 255);
+            setPos(node, 0, topY - strip.offsetFromTop - strip.displayHeight * 0.5);
+            if (isSource) this.m_BackgroundFadeNodes.push(node);
+        }
+    }
+
+    /**
+     * **网格兜底**路径（v1.10 原始实现）：`Graphics` 画深色底 + 与格子对齐的网格线。
+     *
+     * 为什么网格能保证无缝：网格线间距 = `cellSize`，周期 `backgroundGridPatternHeight` = 768 = 6 格
+     * → 图案以 H 为周期是**构造保证**的，回绕前后逐像素相同（见 core/ScrollWorld.ts 的不变量 ③）。
+     *
+     * 块数：块 k 的底边 = `m_BackgroundBottomY - offset + k × H`，块数由 `backgroundTileCount()`
+     * 按「可视高度 + 一个周期」推出（本配置 = **3 块**），不是凭手感取 2：H(768) < 可视高(1408) 时
+     * 两块盖不满，会出现空隙。
+     */
+    private createGridBackground(): void {
+        const patternHeight = GameTuning.backgroundGridPatternHeight;
+        const bounds = screenBounds();
+
+        // 「绝不同时出现两份背景」：注入进来的真实背景节点在网格路径下要**藏起来**
+        // （否则面板上还挂着那张美术图，网格叠在它上面 = 两份背景）。
+        // 藏的是整个节点（active=false）而不是只关 Sprite：万一美术以后给它加了子节点也一起藏。
+        if (this.m_BackgroundNode && this.m_BackgroundNode.isValid) {
+            this.m_BackgroundSourceActive = this.m_BackgroundNode.active;
+            this.m_BackgroundNodeHidden = true;
+            this.m_BackgroundNode.active = false;
+        }
+        // 网格相位取出生线：背景网格线与敌人占格线永远重合（看得到"世界在动"）
+        this.m_BackgroundBottomY = gridAlignedBottom(GameTuning.spawnLineY, bounds.bottom, GameTuning.cellSize);
+        this.m_ScrollY = 0;
+
+        this.m_BackgroundRoot = makeNode(this.m_FieldRoot, 'Background');
+        const count = backgroundTileCount(bounds.top - this.m_BackgroundBottomY, patternHeight);
+
+        for (let i = 0; i < count; i++) {
+            const tile = makeNode(this.m_BackgroundRoot, `BgTile_${i}`);
+            const transform = tile.addComponent(UITransform);
+            transform.setContentSize(GameTuning.designWidth, patternHeight);
+            // 底与线各用一个 Graphics 节点：同一个 Graphics 上"先 fill 再 stroke"会踩
+            // 路径残留的坑（描边可能把底矩形也描一遍 → 块边界多出一条更暗的线 = 假接缝），
+            // 拆成两个节点就完全不用赌引擎的路径清理行为。
+            this.paintBackgroundBase(tile);
+            this.paintBackgroundGrid(tile);
+            this.m_BackgroundTiles.push(tile);
+        }
+
+        this.updateBackground();
+    }
+
+    /** 画一块背景的**深色底**（铺满该块的整个周期矩形） */
+    private paintBackgroundBase(tile: Node): void {
+        const node = makeNode(tile, 'Base');
+        node.addComponent(UITransform).setContentSize(GameTuning.designWidth, GameTuning.backgroundGridPatternHeight);
+        const g = node.addComponent(Graphics);
+        const w = GameTuning.designWidth;
+        const h = GameTuning.backgroundGridPatternHeight;
+        g.fillColor = BG_BASE_COLOR;
+        g.rect(-w * 0.5, -h * 0.5, w, h);
+        g.fill();
+    }
+
+    /**
+     * 画一块背景的**网格线**：横线间距 = `cellSize`（与格子对齐、跨块连续），竖线 = 棋盘列线。
+     *
+     * ⚠️ 横线只画「底边 + 内部」这 `h / cellSize` 条，**顶边留给上一块的底边**：
+     * 每条线在整个世界里只被画一次。若图省事把上下边都画上，两条半透明线会精确重叠，
+     * 每 H px 就出现一道更暗的横带 —— 那就是"接缝"，正是要避免的东西。
+     */
+    private paintBackgroundGrid(tile: Node): void {
+        const node = makeNode(tile, 'Grid');
+        node.addComponent(UITransform).setContentSize(GameTuning.designWidth, GameTuning.backgroundGridPatternHeight);
+        const g = node.addComponent(Graphics);
+
+        const w = GameTuning.designWidth;
+        const h = GameTuning.backgroundGridPatternHeight;
+        const halfW = w * 0.5;
+        const halfH = h * 0.5;
+        // 用 round 兜住 H 不是 cellSize 整数倍的情况：线照样等分该块，跨块仍然连续
+        const lines = Math.max(1, Math.round(h / GameTuning.cellSize));
+        const step = h / lines;
+
+        g.lineWidth = BG_GRID_WIDTH;
+        g.strokeColor = new Color(
+            BG_GRID_COLOR.r,
+            BG_GRID_COLOR.g,
+            BG_GRID_COLOR.b,
+            GameTuning.backgroundGridAlpha
+        );
+
+        // ① 横线：底边 + 内部（不含顶边，见上面注释）
+        for (let i = 0; i < lines; i++) {
+            const y = -halfH + i * step;
+            g.moveTo(-halfW, y);
+            g.lineTo(halfW, y);
+        }
+
+        // ② 竖线：与棋盘列线同一条格点阵（x 与滚动无关，所以永远与敌人列对齐）
+        const left = boardLeftX();
+        const startK = Math.ceil((-halfW - left) / GameTuning.cellSize);
+        const endK = Math.floor((halfW - left) / GameTuning.cellSize);
+        for (let k = startK; k <= endK; k++) {
+            const x = left + k * GameTuning.cellSize;
+            g.moveTo(x, -halfH);
+            g.lineTo(x, halfH);
+        }
+
+        g.stroke();
     }
 
     private createPlayerAndCursor(): void {
@@ -413,6 +935,8 @@ export class BattleView extends Component {
         this.m_EnemyWorld = {
             playerX: this.m_PlayerX,
             playerY: this.m_PlayerY,
+            // 每帧由 updateScroll() 写入唯一滚动源的值（这里只是给个合法初值）
+            scrollDelta: 0,
             onDiveHitPlayer: (_enemy: EnemyRuntime, damage: number) => this.onPlayerDamaged(damage),
             onDiveFinished: () => undefined,
         };
@@ -428,7 +952,10 @@ export class BattleView extends Component {
 
         this.updateFiring(d);
         this.updateSpawning(d);
+        // 单一滚动源：**先**算本帧世界滚动位移（含世界暂停裁决），**再**让背景与敌人分别消费它
+        this.updateScroll(d);
         this.updateEnemies(d);
+        this.updateBackground();
         // 瞄准（兜底自动瞄准 + 浮标贴外围圆 + 辅助射线）放在敌人之后：
         // 用的是本帧最新的敌人位置，射线与真实弹道才对得上
         this.updateAim(d);
@@ -763,14 +1290,95 @@ export class BattleView extends Component {
         this.m_EnemyFeedback.set(enemy.id, feedbackList);
     }
 
+    /**
+     * **单一滚动源**：每帧只在这里算一次世界滚动位移，背景与敌人共用（绝无第二套速度）。
+     *
+     * ① 速度 = 当前波的 `waveScaling(wave).fallSpeed` —— 语义与 v1.9 完全一致
+     *    （第 1 波 20 px/s、每波 +8%、上限 ×2.5），只是它现在**同时**就是背景滚动速度；
+     * ② 世界暂停：`applyStopBlocking()` 在「任一敌人停住（到底 Telegraph / 被技能定住 frozen）」
+     *    时返回 true → `effectiveScrollDelta()` 令 `delta = 0`
+     *    → **背景与敌人一起静止**，恢复后一起继续（v1.5「全场停止」的设计意图保持不变，
+     *    同时消灭了「敌人停了背景还在滚」的穿帮）；
+     * ③ 累计量按背景周期回绕存储，长期运行不丢精度（对外表现连续）。
+     */
+    private updateScroll(d: number): void {
+        // 全场停止：只要有敌人停住不动（到底 / 被技能定住），整个世界一起停
+        const worldPaused = applyStopBlocking(this.m_Enemies);
+        const step = advanceWorldScroll(
+            this.m_ScrollY,
+            waveScaling(this.m_Wave).fallSpeed,
+            d,
+            worldPaused,
+            this.backgroundFieldPeriod()
+        );
+        this.m_ScrollDelta = step.delta;
+        this.m_ScrollY = step.scrollY;
+    }
+
+    /** 当前「场空间 → 背景块空间」的视觉换算系数（**每帧现算**：旋屏/缩放变化也不会错位） */
+    private backgroundSpaceScaleNow(): number {
+        const parentScale =
+            this.m_BackgroundParent && this.m_BackgroundParent.isValid ? this.m_BackgroundParent.worldScale.y : 1;
+        return backgroundSpaceScale(this.node.worldScale.y, parentScale);
+    }
+
+    /**
+     * 背景**回绕周期**（场空间单位）——`advanceWorldScroll()` 用它把累计量取模。
+     *
+     * · 网格路径：`backgroundGridPatternHeight`（显式值，必须整除 `cellSize`）；
+     * · 真实美术路径：块间距 ÷ 空间换算系数（自动时块间距 = 块的显示高度，于是周期的
+     *   **视觉**长度恰好等于一块 ⇒ 回绕瞬间整组块只是"整体下移一块"，画面逐像素不变）。
+     */
+    private backgroundFieldPeriod(): number {
+        if (!this.m_BackgroundUsesNode) return GameTuning.backgroundGridPatternHeight;
+        const period = this.m_BackgroundTileSpacing / this.backgroundSpaceScaleNow();
+        return Number.isFinite(period) && period > 0 ? period : FALLBACK_PATTERN_HEIGHT;
+    }
+
+    /**
+     * 背景随世界滚动：**只读** `m_ScrollDelta` / `m_ScrollY`，自己不算任何速度。
+     *
+     * 真实美术路径（块活在面板空间）：
+     *   · 摆位只用现成的 `wrapBackgroundOffset()` / `backgroundTileBottomY()`，**没有第二套滚动数学**；
+     *   · 唯一多出来的一步是**空间换算**：`offset(面板) = m_ScrollY(场) × 空间系数`，
+     *     于是背景与敌人在屏幕上的位移**严格相等**（窄高屏上 `m_GameRoot` 有 contain 缩放）；
+     *   · 世界暂停时 `m_ScrollY` 不变 → offset 不变 → 背景与敌人**一起**停（验证见单测）。
+     *
+     * 网格路径：与 v1.10 完全一致（场空间、格子对齐基准）。
+     */
+    private updateBackground(): void {
+        if (this.m_BackgroundTiles.length === 0) return;
+
+        if (this.m_BackgroundUsesNode) {
+            const spacing = this.m_BackgroundTileSpacing;
+            const offset = wrapBackgroundOffset(this.m_ScrollY * this.backgroundSpaceScaleNow(), spacing);
+            for (let i = 0; i < this.m_BackgroundTiles.length; i++) {
+                const tile = this.m_BackgroundTiles[i];
+                if (!tile || !tile.isValid) continue;
+                const bottom = backgroundTileBottomY(this.m_BackgroundBottomY, offset, spacing, i);
+                // 底边 → 节点 position：锚点默认 0.5，所以 + 半个**显示**高度
+                setPos(tile, tile.position.x, bottom + this.m_BackgroundTileAnchorY * this.m_BackgroundTileDisplayHeight);
+            }
+            return;
+        }
+
+        const patternHeight = GameTuning.backgroundGridPatternHeight;
+        const offset = this.m_ScrollY;
+        for (let i = 0; i < this.m_BackgroundTiles.length; i++) {
+            const bottomY = backgroundTileBottomY(this.m_BackgroundBottomY, offset, patternHeight, i);
+            setPos(this.m_BackgroundTiles[i], 0, bottomY + patternHeight * 0.5);
+        }
+    }
+
     private updateEnemies(d: number): void {
         if (this.m_Enemies.length === 0) return;
         this.m_EnemyWorld.playerX = this.m_PlayerX;
         this.m_EnemyWorld.playerY = this.m_PlayerY;
+        // 敌人只消费本帧的世界滚动位移（**与背景同一个值**）：
+        // 全场停止的裁决已经在 updateScroll() 里做完，并已体现为 m_ScrollDelta = 0
+        this.m_EnemyWorld.scrollDelta = this.m_ScrollDelta;
 
         const dead: number[] = [];
-        // 全场停止：只要有敌人停住不动（到底 / 被技能定住），所有敌人一律停止下落
-        applyStopBlocking(this.m_Enemies);
         for (let i = 0; i < this.m_Enemies.length; i++) {
             const enemy = this.m_Enemies[i];
             stepEnemy(enemy, d, this.m_EnemyWorld);
@@ -1269,7 +1877,11 @@ export class BattleView extends Component {
         }
 
         if (this.m_DebugLabel) {
-            this.m_DebugLabel.string = `${describeStats(stats)}　敌 ${this.m_Enemies.length}　弹 ${this.m_Bullets.length}　素材 ${gameArtCount(this.m_Art)}/${gameArtTotal()}`;
+            const bg = this.m_BackgroundUsesNode
+                ? `真实美术 ${this.m_BackgroundTiles.length}块 周期${this.m_BackgroundTileSpacing.toFixed(0)} 系数${this.backgroundSpaceScaleNow().toFixed(2)}`
+                : `网格 ${this.m_BackgroundTiles.length}块`;
+            this.m_DebugLabel.string = `${describeStats(stats)}　敌 ${this.m_Enemies.length}　弹 ${this.m_Bullets.length}　素材 ${gameArtCount(this.m_Art)}/${gameArtTotal()}` +
+                `　背景 ${bg}　滚 ${this.m_ScrollY.toFixed(0)}/${this.backgroundFieldPeriod().toFixed(0)}　d ${this.m_ScrollDelta.toFixed(2)}`;
         }
         if (this.m_PendingLevelUps > 0 && !this.m_OverlayPaused && !this.m_Finished) {
             this.showLevelUpChoice();
