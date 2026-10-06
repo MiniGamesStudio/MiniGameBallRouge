@@ -1285,6 +1285,10 @@ export class BattleView extends Component {
         const perCellArt = enemy.cols * enemy.rows <= 2;
         // 受击表现挂在**敌人根节点**上：底图与怪物图都是它的子节点，抖动才会一起动
         const feedback = HitFeedback.attach(node, true);
+        // 品质底图也闪白：模板用底图自己的 frame（圆角 + 描边轮廓），铺满整个占格。
+        // ⚠️ 必须**先于**怪物图加入 → 层级在底图之上、怪物图之下，
+        // 这样底图闪白不会把怪物轮廓盖掉（否则整只怪会变成一块白）。
+        feedback.addFlash(tileFrame, boxW, boxH);
 
         if (perCellArt) {
             for (let r = 0; r < enemy.rows; r++) {
