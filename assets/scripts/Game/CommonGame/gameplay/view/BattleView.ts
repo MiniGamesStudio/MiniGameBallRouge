@@ -292,13 +292,14 @@ export class BattleView extends Component {
     /** 开火解锁：第一行敌人出生并下移后才允许发射 */
     private m_FireUnlocked = false;
     private m_EnemyNodes: Map<number, Node> = new Map();
-    /** 敌人受击表现（闪白 + 震动） */
     /**
-     * 敌人的受击表现。一格 / 两格怪是「一格一张怪物图」，所以一个敌人可能挂多条
-     * （两格怪两格都要闪白 / 震动）；4/6/8 格是一张放大图，只有一条。
-     * bx / by 是节点未被震动时的基准坐标（震动直接改节点位置，必须记住基准才能精确归位）。
+     * 敌人的受击表现（闪白 + 震动）。**一个敌人一条**：
+     * 震动目标是敌人**根节点**，所以品质底图与怪物图会一起抖
+     * （曾经挂在怪物图精灵上 → 只有怪物图抖、底图不动）；
+     * 两格怪的两格闪白由同一条内部的多片闪白承担（HitFeedback.addFlash）。
+     * 位置基准就是敌人自身的 (enemy.x, enemy.y)。
      */
-    private m_EnemyFeedback: Map<number, Array<{ fb: HitFeedback; bx: number; by: number }>> = new Map();
+    private m_EnemyFeedback: Map<number, HitFeedback> = new Map();
     /** 玩家受击表现（只有闪白，不震） */
     private m_PlayerFeedback: HitFeedback | null = null;
     private m_Drops: DropRuntime[] = [];
@@ -853,12 +854,11 @@ export class BattleView extends Component {
             (playerFit ? Math.max(playerFit.width, playerFit.height) : GameTuning.cellSize) / 2 +
             GameTuning.cursorOrbitGap;
         setPos(this.m_PlayerNode, this.m_PlayerX, this.m_PlayerY);
-        this.m_PlayerFeedback = HitFeedback.attach(
-            this.m_PlayerNode,
+        this.m_PlayerFeedback = HitFeedback.attach(this.m_PlayerNode, false);
+        this.m_PlayerFeedback.addFlash(
             playerFrame,
             playerFit ? playerFit.width : GameTuning.cellSize,
-            playerFit ? playerFit.height : GameTuning.cellSize,
-            false
+            playerFit ? playerFit.height : GameTuning.cellSize
         );
 
         // 瞄准游标开局在屏幕正中（开场默认朝正上方打，§4）
@@ -1283,7 +1283,8 @@ export class BattleView extends Component {
         //    4 / 6 / 8 格 → **一张放大图**铺在占格中间（走 Boss_001-003）
         const monsterFrame = getArt(this.m_Art, paths.monster);
         const perCellArt = enemy.cols * enemy.rows <= 2;
-        const feedbackList: Array<{ fb: HitFeedback; bx: number; by: number }> = [];
+        // 受击表现挂在**敌人根节点**上：底图与怪物图都是它的子节点，抖动才会一起动
+        const feedback = HitFeedback.attach(node, true);
 
         if (perCellArt) {
             for (let r = 0; r < enemy.rows; r++) {
@@ -1293,29 +1294,21 @@ export class BattleView extends Component {
                     const art = createSprite(node, `Monster_${r}_${c}`, monsterFrame);
                     const fit = applyContainFit(art, monsterFrame, cell, cell, GameTuning.artFitMargin);
                     setPos(art, cx, cy);
-                    // 闪白挂在这一格上：模板尺寸用该格怪物图的实际尺寸（用占格尺寸会与轮廓错位）
-                    feedbackList.push({
-                        fb: HitFeedback.attach(art, monsterFrame, fit ? fit.width : cell, fit ? fit.height : cell, true),
-                        bx: cx,
-                        by: cy,
-                    });
+                    // 闪白按格偏移：模板尺寸用该格怪物图的实际尺寸（用占格尺寸会与轮廓错位）
+                    feedback.addFlash(monsterFrame, fit ? fit.width : cell, fit ? fit.height : cell, cx, cy);
                 }
             }
         } else {
             const art = createSprite(node, 'Monster', monsterFrame);
             // 一张放大图：contain 到整个占格（margin 给 1，尽量占满且不拉变形）
             const fit = applyContainFit(art, monsterFrame, boxW, boxH, 1);
-            feedbackList.push({
-                fb: HitFeedback.attach(art, monsterFrame, fit ? fit.width : boxW, fit ? fit.height : boxH, true),
-                bx: 0,
-                by: 0,
-            });
+            feedback.addFlash(monsterFrame, fit ? fit.width : boxW, fit ? fit.height : boxH);
         }
 
         setPos(node, enemy.x, enemy.y);
         setScale(node, enemyVisualScale(enemy));
         this.m_EnemyNodes.set(enemy.id, node);
-        this.m_EnemyFeedback.set(enemy.id, feedbackList);
+        this.m_EnemyFeedback.set(enemy.id, feedback);
     }
 
     /**
@@ -1416,10 +1409,8 @@ export class BattleView extends Component {
                 setPos(node, enemy.x, enemy.y);
                 setScale(node, enemyVisualScale(enemy));
                 // 震动改的是节点位置，所以必须在本帧基准位置定好之后再更新
-                const feedbackList = this.m_EnemyFeedback.get(enemy.id);
-                for (let f = 0; feedbackList && f < feedbackList.length; f++) {
-                    feedbackList[f].fb.update(d, feedbackList[f].bx, feedbackList[f].by);
-                }
+                const feedback = this.m_EnemyFeedback.get(enemy.id);
+                if (feedback) feedback.update(d, enemy.x, enemy.y);
             }
             if (isDead(enemy)) dead.push(enemy.id);
         }
@@ -1447,8 +1438,7 @@ export class BattleView extends Component {
         this.spawnDamageText(enemy.x, enemy.y, dmg, crit, false);
 
         // 命中即闪白 + 震动（致死那一下也闪，观感上"打中了"更明确）
-        const feedbackList = this.m_EnemyFeedback.get(enemy.id);
-        for (let i = 0; feedbackList && i < feedbackList.length; i++) feedbackList[i].fb.trigger();
+        this.m_EnemyFeedback.get(enemy.id)?.trigger();
         if (enemy.hp > 0) return;
 
         killEnemy(enemy);
