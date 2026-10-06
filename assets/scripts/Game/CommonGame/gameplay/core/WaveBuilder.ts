@@ -133,8 +133,10 @@ function buildBigBand(wave: number, rng: IRandom, opts: Required<Omit<WaveBuildO
     const occupied: boolean[][] = [];
     for (let r = 0; r < bandRows; r++) occupied.push(new Array(GameTuning.columns).fill(false));
     const enemies: EnemySpawnSpec[] = [];
-    const maxStartCol = Math.max(0, GameTuning.columns - bigCols);
-    const startCol = RandomUtil.int(rng, 0, maxStartCol);
+    // BOSS 固定摆在棋盘**正中间**（不再随机列）：
+    // 5 列棋盘放 2 列宽的竖版 BOSS 时居中是"半格"（(5−2)/2 = 1.5），
+    // 取 ⌊…⌋ 落到偏左的那一组（占 1~2 列）；列数/体型变化时这条公式自动居中。
+    const startCol = Math.floor((GameTuning.columns - bigCols) / 2);
     // 需求 2：4/6/8 格都算 BOSS —— 4 格是「小BOSS」，6/8 格是「大BOSS」
     const bigType = bigShape === EnemyShape.Quad ? EnemyType.MiniBoss : EnemyType.Boss;
     const bigQuality = pickQuality(rng, wave, true);
