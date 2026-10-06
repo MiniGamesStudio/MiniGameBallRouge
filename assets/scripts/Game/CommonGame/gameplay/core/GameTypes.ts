@@ -82,6 +82,35 @@ export enum BulletState {
     Returning = 'returning',
 }
 
+/**
+ * 子弹种类：主弹匣弹 + 三种技能特殊弹。
+ *
+ * 玩法层的意义只有一条 —— **命中时该派发哪套结算**（伤害 / 灼烧 / 冻结 / 连锁，
+ * 见 BattleView.onBulletHitEnemy），以及**回收时该还给谁**（弹匣 / 特殊弹自己的 CD 账本）。
+ * 物理行为（反弹、回身、回收）四种完全一致，所以不需要在 core 里分叉。
+ *
+ * ⚠️ 特殊弹一律 `fromMagazine = false`：它们**不占弹匣**，也**不占 `freeBulletMax`**
+ * （那是僚机 / 分裂弹的全局上限），所以 `onBulletCaught` 必须按 kind 分支而不是按 fromMagazine，
+ * 否则回收特殊弹会去扣弹匣或免费弹的账。
+ */
+export enum BulletKind {
+    /** 主弹匣子弹（玩家普攻） */
+    Magazine = 0,
+    /** 闪电子弹（技能 s_lightning）：命中后从该点连锁最近的 N 个敌人 */
+    Lightning = 1,
+    /** 火球（技能 s_fireball）：命中附加持续灼烧 */
+    Fire = 2,
+    /** 冰冻弹（技能 s_ice）：命中冻结目标（沿用"任一敌人停住 ⇒ 全场停"口径） */
+    Ice = 3,
+}
+
+/** 需要走「独立 CD 子弹」流程的三种技能弹（顺序即 UI / 结算的遍历顺序） */
+export const SPECIAL_BULLET_KINDS: ReadonlyArray<BulletKind> = [
+    BulletKind.Lightning,
+    BulletKind.Fire,
+    BulletKind.Ice,
+];
+
 /** 二维向量 */
 export interface Vec2 {
     x: number;
@@ -111,8 +140,19 @@ export interface BulletRuntime {
     life: number;
     /** 本次接触窗口内已命中的敌人，防止一次穿过扣多次血 */
     hitSet: Set<number>;
-    /** 是否占用玩家弹匣（false = 僚机/分裂弹等免费弹） */
+    /** 是否占用玩家弹匣（false = 僚机/分裂弹/技能特殊弹等免费弹） */
     fromMagazine: boolean;
+    /** 子弹种类（缺省 = Magazine）。决定命中派发与回收归还，见 BulletKind */
+    kind?: BulletKind;
+    /**
+     * 本发子弹的**名义速度** px/s。
+     *
+     * ⚠️ 存在的唯一理由：回身速度不能写死成 `GameTuning.bulletSpeed`。
+     * 闪电弹的 speedMul 是 1.6，如果回程还用基准速度，就只有出膛那一段快、
+     * 回家照样慢，"闪电快得多"在手感上不成立（见 BulletSim.aimAtPlayer）。
+     * 缺省 / 非正值时退回 `GameTuning.bulletSpeed`。
+     */
+    speed?: number;
 }
 
 /** 敌人运行时数据 */
@@ -148,8 +188,36 @@ export interface EnemyRuntime {
     diveTargetY: number;
     /** 被同列队首挡住（本帧不下落）：applyColumnBlocking 每帧计算 */
     blocked?: boolean;
-    /** 被技能定住（预留：停止类技能置 true，同样阻塞同列后面的敌人） */
+    /**
+     * 被技能定住（冻结类技能置 true，同样阻塞同列后面的敌人，并触发「全场停止」）。
+     *
+     * ⚠️ 它**不是**自己计时的：真源是 `status.freezeTime`，由 `StatusEffects.stepStatus()`
+     * 每帧同步（`frozen = freezeTime > 0`）。保留成独立布尔是因为
+     * `EnemySim.isEnemyStopped` / `applyStopBlocking` / `ScrollWorld.test` 都以它为准。
+     */
     frozen?: boolean;
+    /** 持续状态（灼烧 / 冰冻）。**可选**：没中过状态的敌人不带这个字段 */
+    status?: EnemyStatus;
+}
+
+/**
+ * 敌人身上的持续状态（灼烧 / 冰冻）。
+ *
+ * ⚠️ 这两个计时器**按真实时间走，不随世界暂停而冻结** ——
+ * 冻结本身会把世界停住（`applyStopBlocking`），如果计时器也跟着停，
+ * 就永远等不到解冻、世界永久卡死。见 StatusEffects.stepStatus 与 BattleView.updateStatuses。
+ */
+export interface EnemyStatus {
+    /** 剩余灼烧时间（s） */
+    burnTime: number;
+    /** 每次跳伤的基础伤害（不含暴击） */
+    burnDamage: number;
+    /** 跳伤间隔（s） */
+    burnInterval: number;
+    /** 距下次跳伤的累计时间（s） */
+    burnAccum: number;
+    /** 剩余冰冻时间（s） */
+    freezeTime: number;
 }
 
 /** 掉落物运行时数据 */

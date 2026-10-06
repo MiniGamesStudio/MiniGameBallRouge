@@ -33,6 +33,19 @@ export interface RunStats {
     magnetRadiusBonus: number;
     /** 经验获取倍率 */
     expMul: number;
+    /**
+     * 三种「特殊子弹」技能等级（**0 = 未学**）。
+     *
+     * 它们同时是"有没有这个技能"与"技能几级"的唯一真源：
+     * BattleView 每帧把它们同步进各自的 SpecialBulletState（见 updateSpecialBullets），
+     * 具体数值（CD / 伤害 / 连锁目标数 / 灼烧 / 冻结）由 core/SpecialBullets 的
+     * lightningSpec / fireballSpec / iceSpec(level) 派生。
+     * ⚠️ 每学一级**只加一个等级数字**，不在这里生成任何子弹 / 特效 ——
+     * 那必须有玩家节点与敌人才能跑，属于表现层（技能表在设计上是"数值 + 效果"）。
+     */
+    lightningLevel: number;
+    fireballLevel: number;
+    iceLevel: number;
     /** 当前等级与经验 */
     level: number;
     exp: number;
@@ -52,6 +65,9 @@ export function createRunStats(): RunStats {
         catchRadiusBonus: 0,
         magnetRadiusBonus: 0,
         expMul: 1,
+        lightningLevel: 0,
+        fireballLevel: 0,
+        iceLevel: 0,
         level: 1,
         exp: 0,
     };
@@ -162,6 +178,35 @@ export const SKILL_POOL: readonly SkillDef[] = [
             stats.expMul += 0.2;
         },
     },
+    {
+        id: 's_lightning',
+        name: '闪电链',
+        desc: '获得一枚闪电子弹：命中后向最近的 3 个敌人连锁放电；升级提升伤害、增加连锁目标、缩短 CD',
+        maxLevel: GameTuning.specialBulletMaxLevel,
+        // 「获得型」技能：这里只记等级，子弹的发射 / 回收 / 连锁全由
+        // BattleView.updateSpecialBullets() + SpecialBullets 的 CD 状态机驱动
+        apply: stats => {
+            stats.lightningLevel += 1;
+        },
+    },
+    {
+        id: 's_fireball',
+        name: '火球术',
+        desc: '获得一枚火球子弹：命中后造成灼烧伤害，持续一段时间；升级提升伤害与灼烧',
+        maxLevel: GameTuning.specialBulletMaxLevel,
+        apply: stats => {
+            stats.fireballLevel += 1;
+        },
+    },
+    {
+        id: 's_ice',
+        name: '冰冻',
+        desc: '获得一枚冰冻子弹：命中后把目标冻结一段时间（全场随之一同静止）；升级提升伤害与冻结时长',
+        maxLevel: GameTuning.specialBulletMaxLevel,
+        apply: stats => {
+            stats.iceLevel += 1;
+        },
+    },
 ];
 
 /**
@@ -224,7 +269,7 @@ export function damagePlayer(stats: RunStats, damage: number): boolean {
 
 /** 调试用：一行打印本局生效数值（策划案 §16.3 要求关键值可打印） */
 export function describeStats(stats: RunStats): string {
-    return [
+    const parts = [
         `Lv${stats.level}`,
         `HP ${Math.ceil(stats.hp)}/${stats.maxHp}`,
         `弹匣 ${stats.bulletCount}`,
@@ -235,7 +280,12 @@ export function describeStats(stats: RunStats): string {
         `回收+${stats.catchRadiusBonus}`,
         `磁吸+${stats.magnetRadiusBonus}`,
         `经验×${stats.expMul.toFixed(2)}`,
-    ].join(' | ');
+    ];
+    // 未学的技能不打印，免得调试行被一堆 Lv0 占满
+    if (stats.lightningLevel > 0) parts.push(`闪电 Lv${stats.lightningLevel}`);
+    if (stats.fireballLevel > 0) parts.push(`火球 Lv${stats.fireballLevel}`);
+    if (stats.iceLevel > 0) parts.push(`冰冻 Lv${stats.iceLevel}`);
+    return parts.join(' | ');
 }/** 面板 HUD 数值快照（纯函数，口径与 BattleView.updateHud() 的世界内 HUD 逐字一致） */
 export interface HudSnapshot {
     /** `关卡 1　波次 3/5` */

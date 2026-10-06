@@ -33,6 +33,14 @@ export const GameArtPath = {
     // ── 玩家与通用 ──
     player: 'texture/player_001',
     bullet: 'texture/game_bullet',
+    /**
+     * 特殊子弹（技能 s_lightning / s_fireball / s_ice）。
+     * ⚠️ 闪电这张的文件名**真的**是双 i（`game_bullet_lightniing`，美术命名笔误）——
+     * 按"看起来对"改成单 i 会 load 不到、静默走洋红兜底，所以逐字照抄磁盘上的名字。
+     */
+    bulletLightning: 'texture/game_bullet_lightniing',
+    bulletFire: 'texture/game_bullet_fire',
+    bulletIce: 'texture/game_bullet_ice',
     cursor: 'texture/game_cursor',
     background: 'background/game_bg',
     // ── 品质底图（一格一张，128×128）──

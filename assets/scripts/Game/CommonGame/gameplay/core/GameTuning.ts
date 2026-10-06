@@ -276,6 +276,107 @@ export const GameTuning = {
     expNeedQuadratic: 1.5,
     /** 升级 / 开局天赋的候选数量 */
     choiceCount: 3,
+    // ─────────── 特殊子弹（闪电 / 火球 / 冰冻，技能 s_lightning / s_fireball / s_ice） ───────────
+    //
+    // 三种技能共用同一套形态：**独立 CD 子弹**，各一枚、互不占用弹匣
+    // （见 core/SpecialBullets.ts 的状态机与 BattleView.updateSpecialBullets）：
+    //   · 发射瞬间开始计 CD；
+    //   · 回收时 CD 没走完 → 子弹留在玩家手里等，CD 一到立刻再射；
+    //   · 回收时 CD 已走完 → 同一帧立刻再射。
+    // ⚠️ CD 必须**长于一次典型往返**，否则每次回收都能立刻射，CD 就形同虚设。
+    /** 三种特殊子弹共用的技能等级上限（与 SKILL_POOL 里三张卡的 maxLevel 保持一致） */
+    specialBulletMaxLevel: 5,
+
+    /** 闪电：1 级时的发射间隔（s） */
+    lightningBulletCd: 3.0,
+    /** 闪电：每级间隔衰减倍率 */
+    lightningBulletCdDecay: 0.88,
+    /** 闪电：间隔下限（s） */
+    lightningBulletMinCd: 1.5,
+    /**
+     * 闪电：子弹速度倍率（基准 = 玩家 bulletSpeed）。
+     * ⚠️ 这个倍率**同时作用于回程**（BulletRuntime.speed）—— 只加快出膛不加快回家的话，
+     * 手感上"闪电快得多"根本不成立。见 BulletSim.aimAtPlayer。
+     */
+    lightningBulletSpeedMul: 1.6,
+    /** 闪电：1 级时子弹本体伤害（命中那个敌人） */
+    lightningBulletDamage: 14,
+    /** 闪电：每级子弹本体伤害增量 */
+    lightningBulletDamagePerLevel: 7,
+    /** 闪电：1 级时的连锁目标数（**含**被子弹打中的那个锚点） */
+    lightningChainTargets: 3,
+    /** 闪电：每级连锁目标数增量（3 → 满级 7） */
+    lightningChainTargetsPerLevel: 1,
+    /** 闪电：1 级时单跳连锁伤害（锚点不重复吃这一下） */
+    lightningChainDamage: 10,
+    /** 闪电：每级单跳连锁伤害增量 */
+    lightningChainDamagePerLevel: 5,
+
+    /** 火球：1 级时的发射间隔（s） */
+    fireBulletCd: 2.5,
+    /** 火球：每级间隔衰减倍率 */
+    fireBulletCdDecay: 0.9,
+    /** 火球：间隔下限（s） */
+    fireBulletMinCd: 1.2,
+    /** 火球：子弹速度倍率 */
+    fireBulletSpeedMul: 1.1,
+    /** 火球：1 级时子弹本体伤害 */
+    fireBulletDamage: 16,
+    /** 火球：每级子弹本体伤害增量 */
+    fireBulletDamagePerLevel: 8,
+    /** 灼烧：1 级持续时间（s） */
+    burnDuration: 3.0,
+    /** 灼烧：每级持续时间增量（s） */
+    burnDurationPerLevel: 0.4,
+    /** 灼烧：每次跳伤的基础伤害 */
+    burnDamage: 8,
+    /** 灼烧：每级跳伤增量 */
+    burnDamagePerLevel: 4,
+    /** 灼烧：跳伤间隔（s） */
+    burnInterval: 0.5,
+
+    /** 冰冻：1 级时的发射间隔（s） */
+    iceBulletCd: 4.0,
+    /** 冰冻：每级间隔衰减倍率 */
+    iceBulletCdDecay: 0.9,
+    /** 冰冻：间隔下限（s） */
+    iceBulletMinCd: 2.0,
+    /** 冰冻：子弹速度倍率 */
+    iceBulletSpeedMul: 1.2,
+    /** 冰冻：1 级时子弹本体伤害 */
+    iceBulletDamage: 10,
+    /** 冰冻：每级子弹本体伤害增量 */
+    iceBulletDamagePerLevel: 4,
+    /**
+     * 冰冻：1 级持续时间（s）。
+     * ⚠️ 冻结沿用现有「任一敌人停住 ⇒ 整个世界一起停」的口径（用户拍板），
+     * 所以这个值直接等于**全场时停的时长** —— 刻意取得短，避免变成全程时停。
+     */
+    freezeDuration: 1.2,
+    /** 冰冻：每级持续时间增量（s） */
+    freezeDurationPerLevel: 0.25,
+
+    // ─────────── 闪电链特效（view/ChainLightningFx.ts） ───────────
+    /**
+     * 整条闪电链的播放时长（s）。
+     * ⚠️ 从 1.0 改到 0.35：需求「闪电技能的闪电速度需要比现在快很多」——
+     * 现在它是被子弹命中的一瞬间触发的表现，拖 1s 会明显跟不上子弹节奏。
+     */
+    chainLightningDuration: 0.35,
+    /** 其中"劈过去"的阶段占比，其余时间用来淡出（0.85 → 0.30s 推进 + 0.05s 淡出） */
+    chainLightningRevealRatio: 0.85,
+    /** 每个被劈到的目标身上画一个电光爆点：外发光半径 px / 核心半径 px */
+    chainLightningMarkRadius: 34,
+    chainLightningMarkGlowScale: 1.4,
+    /** 每跳的折线段数（越大越细碎） */
+    chainLightningSegments: 7,
+    /** 折线垂直抖动幅度 px（中间最大、两端收窄到 0，见 buildBoltPath） */
+    chainLightningJitter: 26,
+    /** 重新抖动间隔（s）：每隔这么久重画一次折线 → "电在抖"的闪烁感 */
+    chainLightningFlicker: 0.05,
+    /** 核心亮线宽度 px / 外发光线宽度 px */
+    chainLightningCoreWidth: 6,
+    chainLightningGlowWidth: 16,
     // ─────────── 美术适配 ───────────
     /**
      * 怪物 / 玩家图在占格内的占比（contain 适配的留白系数）。

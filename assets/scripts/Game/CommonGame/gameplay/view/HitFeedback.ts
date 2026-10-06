@@ -4,15 +4,8 @@
  * 闪白为什么用 Mask 模板裁切，而不是直接画一个白色圆角块：
  * 白块只能画"占格矩形"，而占格 ≠ 美术轮廓 —— 贴图四周有透明留白，
  * 白块会把透明区域一起盖住，看起来像"贴了个白方块"，而不是"这只怪被打白了"。
- * 这里把**精灵自己的 spriteFrame** 设成 Mask 模板（SPRITE_STENCIL），
- * 再在模板里填白色矩形：白色只出现在贴图 alpha ≥ 0.1 的地方，
- * 形状与美术轮廓完全一致（含两格怪，以及用两格图拉伸出来的 4/6/8 格大怪）。
- *
- * 两个实现坑：
- * ① Mask 的 SPRITE_STENCIL 会给**同一个节点**挂一个内部 Sprite 当模板，
- *    所以必须先设 type 再设 spriteFrame（顺序反了内部 Sprite 还不存在，spriteFrame 会被丢掉）；
- * ② 那个内部 Sprite 的尺寸模式要显式改成 CUSTOM，否则它会按贴图原始尺寸反改节点大小，
- *    拉伸后的大怪就会只被裁到一小块。
+ * 具体怎么挂模板（以及两个顺序坑）见 view/StencilQuad.ts —— 那一块已经被抽成公共件，
+ * 灼烧 / 冰冻覆盖用的是同一份实现，不会各写一套。
  *
  * 坐标说明：
  * ① **震动目标 = 传入的 target 节点本身**，闪白块也挂在它下面（可带偏移）。
@@ -20,20 +13,18 @@
  *    抖动只动怪物图、品质底图钉在原地，看起来像"怪物图在底图里滑动"；
  * ② 震动由本类直接改 target 的位置，所以调用方每帧要传一次"基准位置"（未震动时的位置）。
  */
-import { Color, Graphics, Mask, Node, Sprite, SpriteFrame, UIOpacity, UITransform } from 'cc';
+import { Color, Node, SpriteFrame } from 'cc';
 import { GameTuning } from '../core/GameTuning';
-import { makeNode, setPos } from './GameArt';
+import { setPos } from './GameArt';
+import { StencilQuad, createStencilQuad, hideStencilQuad, showStencilQuad } from './StencilQuad';
 
-/** 一片闪白：一格 / 两格怪每格一片，4/6/8 格大怪一片 */
-interface FlashEntry {
-    node: Node;
-    opacity: UIOpacity | null;
-}
+/** 闪白色（受击那一瞬间的纯白，只在贴图轮廓内出现） */
+const FLASH_COLOR = new Color(255, 255, 255, 255);
 
 /** 一次受击表现的运行时状态（闪白 + 可选震动） */
 export class HitFeedback {
     private m_Target: Node;
-    private m_Flashes: FlashEntry[] = [];
+    private m_Flashes: StencilQuad[] = [];
     private m_FlashTime: number = 0;
     private m_ShakeTime: number = 0;
     private m_Shaking: boolean = false;
@@ -68,49 +59,9 @@ export class HitFeedback {
         offsetY: number = 0
     ): void {
         if (!this.m_Target || !this.m_Target.isValid) return;
-        const node = HitFeedback.createFlashNode(this.m_Target, frame, width, height);
-        setPos(node, offsetX, offsetY);
-        this.m_Flashes.push({ node, opacity: node.getComponent(UIOpacity) });
-    }
-
-    /** 建闪白层：有贴图就用贴图轮廓当模板，缺图退化成圆角矩形（平时 active=false，不产生绘制） */
-    private static createFlashNode(target: Node, frame: SpriteFrame | null, width: number, height: number): Node {
-        const node = makeNode(target, 'HitFlash');
-        const transform = node.addComponent(UITransform);
-        transform.setContentSize(width, height);
-
-        if (frame) {
-            const mask = node.addComponent(Mask);
-            mask.type = Mask.Type.SPRITE_STENCIL;   // 先设 type：内部模板 Sprite 在这一步才被创建
-            mask.spriteFrame = frame;
-
-            // 模板 Sprite 必须按我们的占格尺寸拉伸绘制，不能按贴图原始尺寸反改节点
-            const stencil = node.getComponent(Sprite);
-            if (stencil) {
-                stencil.type = Sprite.Type.SIMPLE;
-                stencil.sizeMode = Sprite.SizeMode.CUSTOM;
-            }
-            transform.setContentSize(width, height);
-        }
-
-        // 白色填充块：有模板时形状由模板决定，这里铺满整格即可
-        const white = makeNode(node, 'White');
-        const whiteTransform = white.addComponent(UITransform);
-        whiteTransform.setContentSize(width, height);
-        const graphics = white.addComponent(Graphics);
-        graphics.fillColor = new Color(255, 255, 255, 255);
-        if (frame) {
-            graphics.rect(-width / 2, -height / 2, width, height);
-        } else {
-            // 缺图兜底：小圆角，贴近占位方块；不要用大圆角（会和美术轮廓差得更远）
-            graphics.roundRect(-width / 2, -height / 2, width, height, Math.min(width, height) * 0.18);
-        }
-        graphics.fill();
-
-        const opacity = node.addComponent(UIOpacity);
-        opacity.opacity = 0;
-        node.active = false;
-        return node;
+        this.m_Flashes.push(
+            createStencilQuad(this.m_Target, 'HitFlash', frame, width, height, FLASH_COLOR, offsetX, offsetY)
+        );
     }
 
     /** 受击：触发闪白（敌人顺带触发震动） */
@@ -118,11 +69,7 @@ export class HitFeedback {
         if (!this.m_Target || !this.m_Target.isValid) return;
 
         this.m_FlashTime = GameTuning.hitFlashTime;
-        for (const flash of this.m_Flashes) {
-            if (!flash.node || !flash.node.isValid) continue;
-            flash.node.active = true;
-            if (flash.opacity && flash.opacity.isValid) flash.opacity.opacity = GameTuning.hitFlashAlpha;
-        }
+        for (const flash of this.m_Flashes) showStencilQuad(flash, GameTuning.hitFlashAlpha);
 
         if (this.m_ShakeEnabled) {
             this.m_ShakeTime = GameTuning.hitShakeTime;
@@ -145,9 +92,8 @@ export class HitFeedback {
             const alpha = Math.round(GameTuning.hitFlashAlpha * ratio);
             const done = this.m_FlashTime <= 0;
             for (const flash of this.m_Flashes) {
-                if (!flash.node || !flash.node.isValid) continue;
-                if (flash.opacity && flash.opacity.isValid) flash.opacity.opacity = alpha;
-                if (done) flash.node.active = false;
+                if (done) hideStencilQuad(flash);
+                else showStencilQuad(flash, alpha);
             }
         }
 

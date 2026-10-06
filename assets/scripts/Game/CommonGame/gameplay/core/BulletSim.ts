@@ -10,7 +10,7 @@
  * 去重：同一接触窗口内同一敌人只结算一次，离开接触后重新计数（§6.4）。
  */
 
-import { BulletRuntime, BulletState, EnemyRuntime } from './GameTypes';
+import { BulletKind, BulletRuntime, BulletState, EnemyRuntime } from './GameTypes';
 import { GameTuning } from './GameTuning';
 import { BoxHit, ScreenBounds, boxFromCells, circleBoxHit, distance, screenBounds } from './BoardMath';
 
@@ -56,7 +56,8 @@ export function createBullet(
     y: number,
     vx: number,
     vy: number,
-    fromMagazine: boolean = true
+    fromMagazine: boolean = true,
+    kind: BulletKind = BulletKind.Magazine
 ): BulletRuntime {
     return {
         id,
@@ -69,6 +70,10 @@ export function createBullet(
         life: 0,
         hitSet: new Set<number>(),
         fromMagazine,
+        kind,
+        // 名义速度 = 出膛速率。回程与超时判定都以它为准，
+        // 所以「速度倍率」类技能（闪电弹 speedMul）出膛与回家是一致的
+        speed: Math.sqrt(vx * vx + vy * vy),
     };
 }
 
@@ -175,9 +180,17 @@ export function enterReturning(bullet: BulletRuntime, world: BulletWorld, result
     world.onReturn?.(bullet);
 }
 
-/** 朝玩家当前位置调整速度方向 */
+/**
+ * 朝玩家当前位置调整速度方向。
+ *
+ * 速率取 `bullet.speed`（出膛时的名义速率）× `returnSpeedScale`，**不是**写死的
+ * `GameTuning.bulletSpeed` —— 否则带速度倍率的子弹（闪电弹 speedMul 1.6）只有出膛那一段快、
+ * 回家照样爬，回收节奏被慢回程拖住，"闪电快得多"在手感上就不成立。
+ * 老存档 / 手工构造的子弹没有 speed 时退回基准速度。
+ */
 function aimAtPlayer(bullet: BulletRuntime, world: BulletWorld): void {
-    const speed = GameTuning.bulletSpeed * GameTuning.returnSpeedScale;
+    const nominal = bullet.speed && bullet.speed > 0 ? bullet.speed : GameTuning.bulletSpeed;
+    const speed = nominal * GameTuning.returnSpeedScale;
     const dir = aimVelocity(bullet.x, bullet.y, world.playerX, world.playerY, speed);
     bullet.vx = dir.vx;
     bullet.vy = dir.vy;

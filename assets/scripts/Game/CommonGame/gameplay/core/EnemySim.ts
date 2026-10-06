@@ -14,6 +14,7 @@ import { GameTuning } from './GameTuning';
 import { WorldScrollConsumer } from './ScrollWorld';
 import { boxFromCells, distance } from './BoardMath';
 import { diveDamage } from './MathModels';
+import { clearStatus } from './StatusEffects';
 
 /**
  * 敌人仿真需要的外部信息
@@ -107,6 +108,9 @@ export function stepEnemy(enemy: EnemyRuntime, dt: number, world: EnemyWorld): E
         }
 
         case EnemyState.Diving: {
+            // 被冰冻定住：俯冲是敌人**自身**的动作，不受世界滚动暂停约束
+            // （世界停了它照飞），所以这里必须单独挡一道，否则"冻住俯冲怪"形同虚设
+            if (enemy.frozen) break;
             const dx = enemy.diveTargetX - enemy.x;
             const dy = enemy.diveTargetY - enemy.y;
             const len = Math.sqrt(dx * dx + dy * dy);
@@ -184,11 +188,18 @@ export function startDive(enemy: EnemyRuntime, world: Pick<EnemyWorld, 'playerX'
     enemy.diveTargetY = world.playerY;
 }
 
-/** 标记死亡 */
+/**
+ * 标记死亡。
+ *
+ * ⚠️ 必须同时 `clearStatus`（清掉灼烧 / 冰冻）：`BattleView.updateScroll`（全场暂停裁决）
+ * 跑在"移除死亡敌人"**之前**，如果一只敌人死时还带着 `frozen`，
+ * 它会继续被 `isEnemyStopped` 判为"停住"，**整个世界永久卡死**。
+ */
 export function killEnemy(enemy: EnemyRuntime): void {
     enemy.state = EnemyState.Dead;
     enemy.stateTime = 0;
     enemy.hp = 0;
+    clearStatus(enemy);
 }
 
 /** 是否已死在场上（等待回收） */

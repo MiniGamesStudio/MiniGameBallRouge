@@ -23,11 +23,13 @@
 import { _decorator, Button, Color, Component, EventTouch, Graphics, Input, Label, Node, Rect, Size, Sprite, SpriteFrame, UIOpacity, UITransform, Vec3, Widget, input, instantiate } from 'cc';
 import { GameTuning } from '../core/GameTuning';
 import {
+    BulletKind,
     BulletRuntime,
     DropKind,
     DropRuntime,
     EnemyRuntime,
     EnemyType,
+    SPECIAL_BULLET_KINDS,
     Vec2,
 } from '../core/GameTypes';
 import { IRandom, RandomUtil, SeededRandom } from '../core/Rng';
@@ -100,6 +102,25 @@ import {
     setScale,
 } from './GameArt';
 import { HitFeedback } from './HitFeedback';
+import { ChainLightningFx } from './ChainLightningFx';
+import { EnemyStatusFx } from './EnemyStatusFx';
+import { pickNearestChainTargets } from '../core/ChainLightning';
+import {
+    LightningSpec,
+    SpecialBulletState,
+    SpecialSpecBase,
+    createSpecialState,
+    fireballSpec,
+    iceSpec,
+    lightningSpec,
+    markCaught,
+    markFired,
+    readyToFire,
+    setSpecialLevel,
+    specialSpec,
+    stepSpecial,
+} from '../core/SpecialBullets';
+import { applyBurn, applyFreeze, stepStatus } from '../core/StatusEffects';
 import { OverlayHandle, showChoiceOverlay, showMessageOverlay } from './ChoiceOverlay';
 
 const { ccclass } = _decorator;
@@ -121,6 +142,19 @@ const DMG_PLAYER = new Color(255, 92, 92, 255);
 const DMG_PLAYER_CRIT = new Color(255, 60, 200, 255);
 /** 飘字描边色（需求：描边 + 加粗） */
 const DMG_OUTLINE = new Color(20, 12, 0, 255);
+
+/**
+ * 四种子弹的贴图与显示尺寸（相对 `cellSize` 的倍率）。
+ *
+ * 尺寸对四种**一视同仁**（四张图都是 30×48），所以换贴图不会让某种子弹看起来变胖变瘦。
+ * ⚠️ 闪电那条路径是双 i（`game_bullet_lightniing`），美术文件名笔误，见 GameArtPath。
+ */
+const BULLET_ART: Record<BulletKind, { path: string; w: number; h: number }> = {
+    [BulletKind.Magazine]: { path: GameArtPath.bullet, w: 0.25, h: 0.375 },
+    [BulletKind.Lightning]: { path: GameArtPath.bulletLightning, w: 0.25, h: 0.375 },
+    [BulletKind.Fire]: { path: GameArtPath.bulletFire, w: 0.25, h: 0.375 },
+    [BulletKind.Ice]: { path: GameArtPath.bulletIce, w: 0.25, h: 0.375 },
+};
 /** 调试 HUD（显示本局生效数值，方便对着策划案核数值） */
 const SHOW_DEBUG_HUD = true;
 
@@ -330,6 +364,30 @@ export class BattleView extends Component {
     private m_SuperCrystals: number = 0;
     private m_Elapsed: number = 0;
 
+    /**
+     * 闪电链（技能 s_lightning）：在播的特效 + 它们的结算账本。
+     * **一个目标只在闪电"劈到"它的那一刻结算一次**，`applied` 就是已经结算过的目标数
+     * （见 updateChainLightningFx）。v1.12 起闪电链由**闪电子弹命中**触发，所以
+     * 创建时 `applied` 就置 1 —— 下标 0 是被子弹打中的锚点，它已经吃过本体伤害了。
+     * 目标存的是 `EnemyRuntime` **引用**（不是坐标快照）—— 敌人会随世界滚动下移，
+     * 每帧要用最新坐标去 refresh 特效，否则闪电会和目标脱开。
+     */
+    private m_ChainBolts: Array<{ fx: ChainLightningFx; targets: EnemyRuntime[]; spec: LightningSpec; applied: number }> = [];
+
+    /**
+     * 三种特殊子弹（闪电 / 火球 / 冰冻）各自的 CD 状态：
+     * 一种子弹同时只存在一发，`inFlight` 记它是否在场上，`cooldown` 从发射那一刻起一直走。
+     * 语义细节（为什么 CD 不因 inFlight 而暂停）见 core/SpecialBullets.ts。
+     */
+    private m_Special: Map<BulletKind, SpecialBulletState> = new Map();
+
+    /**
+     * 敌人的持续状态表现（灼烧 / 冰冻）。**一个敌人一条**，挂在该敌人的根节点下，
+     * 所以天然跟着敌人的缩放与受击震动走（与 m_EnemyFeedback 同一思路）。
+     * 显隐由 `enemy.status` 驱动（见 updateEnemyStatusFx），不在这里另记一份计时。
+     */
+    private m_EnemyStatus: Map<number, EnemyStatusFx> = new Map();
+
     private m_OverlayPaused: boolean = false;
     private m_ExternalPaused: boolean = false;
     private m_Finished: boolean = false;
@@ -371,6 +429,13 @@ export class BattleView extends Component {
         this.m_Overlay = null;
         this.m_EnemyFeedback.clear();
         this.m_PlayerFeedback = null;
+        // 灼烧 / 冰冻覆盖是敌人根节点的子节点，会随敌人一起销毁；这里只清表
+        this.m_EnemyStatus.clear();
+        // 三种特殊弹的 CD 状态：本局结束即作废（下一局从 createRunStats 的 0 级重来）
+        this.m_Special.clear();
+        // 闪电链特效是 Field 下的独立节点，不随反馈表清理 → 显式销毁（否则关卡重开时会留下一堆白线）
+        for (const bolt of this.m_ChainBolts) bolt.fx.destroy();
+        this.m_ChainBolts.length = 0;
         // 真实美术背景的克隆块挂在**面板**上（不在本节点子树里），必须显式收尾
         this.releaseNodeBackground();
         // 素材走 GameArt 内部的常驻缓存，这里不释放（避免释放路径写错导致贴图提前失效）
@@ -978,6 +1043,11 @@ export class BattleView extends Component {
 
         this.updateFiring(d);
         this.updateSpawning(d);
+        // 持续状态（灼烧 / 冰冻）**必须排在滚动之前**：冻结到期的那一帧就要解冻，
+        // 同帧 updateScroll 才能让世界恢复滚动（否则会多停一帧，肉眼可感）。
+        // ⚠️ 它按真实时间走、**不受世界暂停影响** —— 冻结自己会把世界停住，
+        // 计时若也跟着停就永远解不开（见 core/StatusEffects.ts 顶部说明）。
+        this.updateStatuses(d);
         // 单一滚动源：**先**算本帧世界滚动位移（含世界暂停裁决），
         // **再**让三个消费者分别消费它 —— 顺序即"锁步"的可见形式：
         // 敌人（updateEnemies）→ 背景（updateBackground）→ 掉落物（updateDrops）
@@ -989,7 +1059,15 @@ export class BattleView extends Component {
         // 用的是本帧最新的敌人位置，射线与真实弹道才对得上
         this.updateAim(d);
         this.m_PlayerFeedback?.update(d, this.m_PlayerX, this.m_PlayerY);
+        // 子弹：普通弹 + 三种特殊弹都在这里仿真；命中在这里派发（闪电链也就此触发），
+        // 伤害结算复用敌人死亡 / 掉落那条唯一路径
         this.updateBullets(d);
+        // 特殊弹的 CD 推进与补射**必须在 updateBullets 之后**：
+        // 本帧刚被回收（onCaught 已把 inFlight 置回 false）的子弹，
+        // 若 CD 已走完就能在同帧立刻再射出去，这正是需求要的行为
+        this.updateSpecialBullets(d);
+        // 闪电链特效只做"推进 + 按到达逐跳结算"（释放已由子弹命中触发）
+        this.updateChainLightningFx(d);
         this.updateWaveFlow(d);
         this.updateHud(false);
         this.updateDamageTexts(d);
@@ -1190,16 +1268,90 @@ export class BattleView extends Component {
         this.m_Bullets.push(bullet);
         this.m_MagazineOut++;
 
+        this.attachBulletNode(bullet, BULLET_ART[BulletKind.Magazine]);
+    }
+
+    /**
+     * 发射一枚特殊子弹（闪电 / 火球 / 冰冻）。
+     *
+     * 与弹匣弹的区别只有三点：**不占弹匣**（`fromMagazine = false`，回收按 kind 归还到自己的 CD 账本）、
+     * 贴图按种类取、速率乘上该技能的 `speedMul`（出膛与回程都吃它 —— 见 BulletSim.aimAtPlayer）。
+     *
+     * 方向同样朝游标（自动瞄准兜底已经把游标放到最近敌人身上，所以玩家不操作也会朝敌人打），
+     * 位置是玩家中心，与弹匣弹同源。
+     */
+    private fireSpecialBullet(kind: BulletKind, spec: SpecialSpecBase): void {
+        const speed = this.m_Stats.bulletSpeed * spec.speedMul;
+        const dir = aimVelocity(this.m_PlayerX, this.m_PlayerY, this.m_CursorX, this.m_CursorY, speed);
+        const bullet = createBullet(this.m_NextId++, this.m_PlayerX, this.m_PlayerY, dir.vx, dir.vy, false, kind);
+        this.m_Bullets.push(bullet);
+
+        this.attachBulletNode(bullet, BULLET_ART[kind]);
+    }
+
+    /** 建子弹节点（四种子弹共用：只有贴图不同） */
+    private attachBulletNode(bullet: BulletRuntime, art: { path: string; w: number; h: number }): void {
+        const cell = GameTuning.cellSize;
         const node = createSprite(
             this.m_FieldRoot,
             `Bullet_${bullet.id}`,
-            getArt(this.m_Art, GameArtPath.bullet),
-            GameTuning.cellSize * 0.25,
-            GameTuning.cellSize * 0.375
+            getArt(this.m_Art, art.path),
+            cell * art.w,
+            cell * art.h
         );
         faceVelocity(node, bullet.vx, bullet.vy);
         setPos(node, bullet.x, bullet.y);
         this.m_BulletNodes.set(bullet.id, node);
+    }
+
+    /**
+     * 三种特殊弹的 CD 推进与补射。
+     *
+     * 每帧：同步技能等级（升级当场生效）→ 推进 CD → 到点就发。
+     * `readyToFire` 的三个条件（学会了 / 手上没有在飞的 / CD 走完）里，
+     * "CD 在飞行途中就已经走完"是最常见的一种 —— 那种情况下子弹一回收，
+     * 本函数在同一帧就把它再射出去。
+     *
+     * ⚠️ 放在 `updateBullets` 之后调用（见 update()）：本帧回收的子弹必须先完成 `markCaught`。
+     * ⚠️ 受与弹匣同一个 `m_FireUnlocked` 闸门约束 —— 第一行怪下来之前不许开火，
+     *    否则会在空场上把 CD 白转掉。
+     */
+    private updateSpecialBullets(d: number): void {
+        if (!this.m_FireUnlocked) return;
+        for (const kind of SPECIAL_BULLET_KINDS) {
+            const state = this.specialState(kind);
+            setSpecialLevel(state, this.specialLevelOf(kind));
+            stepSpecial(state, d);
+            if (!readyToFire(state)) continue;
+
+            const spec = specialSpec(kind, state.level);
+            this.fireSpecialBullet(kind, spec);
+            markFired(state, spec.cooldown);
+        }
+    }
+
+    /** 取（必要时创建）某种特殊弹的 CD 状态 */
+    private specialState(kind: BulletKind): SpecialBulletState {
+        let state = this.m_Special.get(kind);
+        if (!state) {
+            state = createSpecialState();
+            this.m_Special.set(kind, state);
+        }
+        return state;
+    }
+
+    /** 技能等级从 RunStats 现取（不在 view 里另存一份，免得两处走偏） */
+    private specialLevelOf(kind: BulletKind): number {
+        switch (kind) {
+            case BulletKind.Lightning:
+                return this.m_Stats.lightningLevel;
+            case BulletKind.Fire:
+                return this.m_Stats.fireballLevel;
+            case BulletKind.Ice:
+                return this.m_Stats.iceLevel;
+            default:
+                return 0;
+        }
     }
 
     private updateBullets(d: number): void {
@@ -1226,16 +1378,45 @@ export class BattleView extends Component {
         if (caught.length > 0) this.removeBullets(caught);
     }
 
-    /** 回收：返还弹匣账本并销毁节点 */
+    /**
+     * 回收：按**种类**归还账本并销毁节点。
+     *
+     * ⚠️ 判据是 `kind` 而不是 `fromMagazine`：三种特殊弹同样是 `fromMagazine = false`，
+     * 但它们既不占弹匣、**也不占 `freeBulletMax`**（那是僚机 / 分裂弹的全局上限），
+     * 所以不能和"免费弹"混在同一个分支里 —— 否则学一个闪电技能就会去扣免费弹的账。
+     * 特殊弹归还的是**自己的 CD 状态**（`markCaught`：只把 inFlight 置回 false，CD 照走）。
+     */
     private onBulletCaught(bullet: BulletRuntime): void {
-        if (bullet.fromMagazine) {
-            this.m_MagazineOut = Math.max(0, this.m_MagazineOut - 1);
-        } else {
-            this.m_FreeBulletsOut = Math.max(0, this.m_FreeBulletsOut - 1);
+        switch (bullet.kind ?? BulletKind.Magazine) {
+            case BulletKind.Lightning:
+            case BulletKind.Fire:
+            case BulletKind.Ice: {
+                const state = this.m_Special.get(bullet.kind);
+                if (state) markCaught(state);
+                return;
+            }
+            case BulletKind.Magazine:
+                this.m_MagazineOut = Math.max(0, this.m_MagazineOut - 1);
+                return;
+            default:
+                this.m_FreeBulletsOut = Math.max(0, this.m_FreeBulletsOut - 1);
+                return;
         }
     }
 
     private removeBullets(ids: number[]): void {
+        // 先按 id 捞出被移除的子弹：特殊弹要归还它的 CD 状态。
+        // 正常路径下 onBulletCaught 已经归还过一次（markCaught 是幂等的，重复无害），
+        // 这里是兜底 —— 将来若有别的移除路径（清场 / 关卡结束）漏了回调，
+        // 也不会让某种特殊弹永远卡在 inFlight = true 上再也射不出来。
+        const removed = this.m_Bullets.filter(b => ids.indexOf(b.id) >= 0);
+        for (const bullet of removed) {
+            const kind = bullet.kind ?? BulletKind.Magazine;
+            if (kind === BulletKind.Magazine) continue;
+            const state = this.m_Special.get(kind);
+            if (state) markCaught(state);
+        }
+
         const idSet = new Set(ids);
         this.m_Bullets = this.m_Bullets.filter(b => !idSet.has(b.id));
         ids.forEach(id => {
@@ -1313,6 +1494,11 @@ export class BattleView extends Component {
         setScale(node, enemyVisualScale(enemy));
         this.m_EnemyNodes.set(enemy.id, node);
         this.m_EnemyFeedback.set(enemy.id, feedback);
+        // 灼烧 / 冰冻覆盖：同样挂在敌人根节点下（跟着缩放与震动走），
+        // 遮罩用品质底图的 frame、铺满整个占格 → 一层就盖住整只怪。
+        // 它加在**最后**，所以渲染顺序在所有怪物图之上 —— 状态覆盖本来就该盖住怪物本身
+        // （与闪白相反：闪白必须躲在怪物图下面，否则整只怪会变成一块白）。
+        this.m_EnemyStatus.set(enemy.id, EnemyStatusFx.attach(node, tileFrame, boxW, boxH));
     }
 
     /**
@@ -1415,6 +1601,10 @@ export class BattleView extends Component {
                 // 震动改的是节点位置，所以必须在本帧基准位置定好之后再更新
                 const feedback = this.m_EnemyFeedback.get(enemy.id);
                 if (feedback) feedback.update(d, enemy.x, enemy.y);
+                // 灼烧 / 冰冻覆盖：显隐完全由 enemy.status 决定（不另记计时），
+                // 所以刷新 / 提前清除（死亡）都会自动反映到画面上
+                const statusFx = this.m_EnemyStatus.get(enemy.id);
+                if (statusFx) statusFx.update(d, enemy);
             }
             if (isDead(enemy)) dead.push(enemy.id);
         }
@@ -1429,15 +1619,91 @@ export class BattleView extends Component {
             if (node && node.isValid) node.destroy();
             this.m_EnemyNodes.delete(id);
             this.m_EnemyFeedback.delete(id);
+            // 状态表现是敌人根节点的子节点，destroy 根节点时已经一起没了；
+            // 这里只需把它从表里摘掉（显式 destroy 一次是幂等的兜底）
+            this.m_EnemyStatus.get(id)?.destroy();
+            this.m_EnemyStatus.delete(id);
         });
     }
 
-    /** 子弹命中敌人：扣血 → 可能死亡 → 掉落 */
-    private onBulletHitEnemy(_bullet: BulletRuntime, enemy: EnemyRuntime): void {
+    /**
+     * 推进所有敌人的持续状态（灼烧跳伤 / 冰冻计时），并维护 `frozen`。
+     *
+     * ⚠️ 两条要点：
+     *   ① **不随世界暂停而停** —— 冻结自己会把世界停住（`applyStopBlocking`），
+     *      计时若也跟着停就永远解不开、世界永久卡死。它跑在 `update()` 里，
+     *      而 `update()` 只对**弹窗 / 外部**暂停早退，所以世界暂停时本函数照跑。
+     *      这与掉落物 `life`（`dropLifePausesWithWorld = true`）是**故意不同**的口径。
+     *   ② 排在 `updateScroll` **之前**：冻结到期的那一帧就解冻，同帧世界恢复滚动。
+     *
+     * 灼烧伤害走 `damageEnemy(..., canCrit = false)`：既复用唯一的伤害入口
+     * （掉落 / 击杀 / 受击表现单一口径），又不会让每 0.5s 一次的跳伤去刷暴击飘字、
+     * 也不会白白消耗暴击随机数。
+     */
+    private updateStatuses(d: number): void {
+        if (this.m_Enemies.length === 0) return;
+        for (let i = 0; i < this.m_Enemies.length; i++) {
+            const enemy = this.m_Enemies[i];
+            if (!enemy) continue;
+            // 没有状态的敌人（绝大多数）在这里几乎零开销：一次字段检查就返回
+            if (!enemy.status && !enemy.frozen) continue;
+
+            const result = stepStatus(enemy, d);
+            if (result.burnTicks > 0 && enemy.status) {
+                this.damageEnemy(enemy, result.burnTicks * enemy.status.burnDamage, false);
+            }
+        }
+    }
+
+    /**
+     * 子弹命中敌人：按**子弹种类**派发结算（伤害 → 可能死亡 → 掉落）。
+     *
+     * 数值一律**现取当前等级**（不缓存到子弹上）：子弹飞出到命中之间玩家可能升级，
+     * 现取才能让"升级当场生效"。四种子弹的物理行为完全一样（反弹 / 回身 / 回收），
+     * 差别只在这一处派发。
+     */
+    private onBulletHitEnemy(bullet: BulletRuntime, enemy: EnemyRuntime): void {
+        switch (bullet.kind ?? BulletKind.Magazine) {
+            case BulletKind.Lightning: {
+                const spec = lightningSpec(this.m_Stats.lightningLevel);
+                this.damageEnemy(enemy, spec.bulletDamage, true);
+                this.triggerChainLightning(enemy, spec);
+                return;
+            }
+            case BulletKind.Fire: {
+                const spec = fireballSpec(this.m_Stats.fireballLevel);
+                this.damageEnemy(enemy, spec.bulletDamage, true);
+                // 先结算本体伤害、再挂灼烧：这一下如果直接打死了，挂状态也无害
+                // （伤害入口已判死亡，stepStatus 会跳过已死敌人，killEnemy 也会清掉状态）
+                applyBurn(enemy, spec.burnDuration, spec.burnDamage, spec.burnInterval);
+                return;
+            }
+            case BulletKind.Ice: {
+                const spec = iceSpec(this.m_Stats.iceLevel);
+                this.damageEnemy(enemy, spec.bulletDamage, true);
+                applyFreeze(enemy, spec.freezeDuration);
+                return;
+            }
+            case BulletKind.Magazine:
+            default:
+                this.damageEnemy(enemy, this.m_Stats.bulletDamage, true);
+                return;
+        }
+    }
+
+    /**
+     * **唯一的敌人受伤结算路径**（子弹与闪电链共用）
+     *
+     * 抽出来是为了让闪电链不必复制"暴击 → 飘字 → 受击表现 → 死亡 → 掉落"这一串：
+     * 两条伤害来源只要走同一个入口，掉落 / 计数 / 表现就绝不会出现两套口径。
+     * @param base 基础伤害（暴击前的值）
+     * @param canCrit 是否吃暴击（子弹吃；将来若有无视暴击的伤害来源，传 false）
+     */
+    private damageEnemy(enemy: EnemyRuntime, base: number, canCrit: boolean): void {
         if (!isHittable(enemy) || enemy.hp <= 0) return;
         // 暴击判定：读玩家属性（可被天赋/词条提升）；普通/暴击飘字颜色不同
-        const crit = this.m_Rng.next() < this.m_Stats.critChance;
-        const dmg = Math.max(1, Math.round(this.m_Stats.bulletDamage * (crit ? this.m_Stats.critMul : 1)));
+        const crit = canCrit && this.m_Rng.next() < this.m_Stats.critChance;
+        const dmg = Math.max(1, Math.round(base * (crit ? this.m_Stats.critMul : 1)));
         enemy.hp -= dmg;
         this.spawnDamageText(enemy.x, enemy.y, dmg, crit, false);
 
@@ -1448,6 +1714,63 @@ export class BattleView extends Component {
         killEnemy(enemy);
         this.m_Kills++;
         this.spawnDrops(enemy);
+    }
+
+    // ─────────── 闪电链（技能 s_lightning） ───────────
+
+    /**
+     * 闪电子弹命中时触发的连锁放电。
+     *
+     * 需求：「命中点开始，最近目标」—— 锚点是**被子弹打中的那个敌人**（它已经吃过本体伤害），
+     * 之后逐跳取离上一个目标最近的敌人，一共 `spec.chainTargets` 个（含锚点）。
+     *
+     * ⚠️ 入账时 `applied` 直接置 **1**：下标 0 是锚点，连锁**不再补刀**
+     * （子弹本体那一下已经结算过；从 0 起算会让锚点白吃两次伤害）。
+     *
+     * 候选过滤与子弹一致（`isHittable` + 血量 > 0）—— 不去连一个子弹打不到的敌人。
+     * 场上没有别的敌人时也会放 —— 那种情况下就是"锚点身上炸一下"（折线退化成爆点，
+     * ChainLightningFx 已经处理）。
+     */
+    private triggerChainLightning(anchor: EnemyRuntime, spec: LightningSpec): void {
+        if (!anchor || !this.m_FieldRoot || !this.m_FieldRoot.isValid) return;
+
+        const candidates = this.m_Enemies.filter(e => e !== anchor && isHittable(e) && e.hp > 0);
+        const linked = pickNearestChainTargets(anchor, candidates, Math.max(1, spec.chainTargets) - 1, anchor.id);
+        const targets = [anchor, ...linked];
+
+        const fx = ChainLightningFx.play(
+            this.m_FieldRoot,
+            targets.map(t => ({ x: t.x, y: t.y })),
+            this.m_Rng
+        );
+        if (!fx) return;
+        this.m_ChainBolts.push({ fx, targets, spec, applied: 1 });
+    }
+
+    /**
+     * 推进所有在播的闪电链：**位移跟随 + 按"劈到第几个目标"逐跳结算**。
+     *
+     * 释放不在这里 —— v1.12 起由闪电子弹命中触发（见 `triggerChainLightning`），
+     * 所以本函数只剩"推进"这一半，不再有计时器。
+     */
+    private updateChainLightningFx(d: number): void {
+        for (let i = this.m_ChainBolts.length - 1; i >= 0; i--) {
+            const bolt = this.m_ChainBolts[i];
+            // 敌人会随世界滚动下移，每帧要用最新坐标刷新，否则闪电会和目标脱开
+            bolt.fx.refresh(bolt.targets.map(t => ({ x: t.x, y: t.y })));
+            bolt.fx.update(d);
+
+            const reached = Math.min(bolt.targets.length, bolt.fx.reachedTargets);
+            for (; bolt.applied < reached; bolt.applied++) {
+                // 目标可能已被别的伤害打死（伤害入口自己会判掉），这里照常调用即可
+                this.damageEnemy(bolt.targets[bolt.applied], bolt.spec.chainDamage, true);
+            }
+
+            if (bolt.fx.finished) {
+                bolt.fx.destroy();
+                this.m_ChainBolts.splice(i, 1);
+            }
+        }
     }
 
     /** 飘伤害数字：敌人（普通/暴击）与玩家（普通/暴击）四种颜色（需求） */
