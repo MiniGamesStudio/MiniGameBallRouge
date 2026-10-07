@@ -933,8 +933,8 @@ export class BattleView extends Component {
             this.m_PlayerNode,
             'Cursor',
             getArt(this.m_Art, GameArtPath.cursor),
-            GameTuning.cellSize * 0.5,
-            GameTuning.cellSize * 0.7
+            50,
+            65
         );
         const orbitLocal = this.cursorOrbitLocal();
         setPos(this.m_CursorNode, orbitLocal.x, orbitLocal.y);
@@ -1079,14 +1079,25 @@ export class BattleView extends Component {
     }
 
     /**
+     * 瞄准方向：玩家 → 瞄准点，**未夹取**（就是玩家真正要打的方向）。
+     *
+     * 浮标的"贴在外围圆上"与"箭头朝向"都用它，两处共用一份计算，
+     * 免得位置和朝向各算一遍、将来改了一处忘了另一处。
+     */
+    private aimDirFromPlayer(): { x: number; y: number } {
+        return { x: this.m_CursorX - this.m_PlayerX, y: this.m_CursorY - this.m_PlayerY };
+    }
+
+    /**
      * 浮标在玩家外围圆上的**局部**偏移：方向 = 玩家 → 瞄准点，半径固定。
      *
      * 浮标已**降级为纯方向标识**（不可拖动，操作方案 A），所以这里只负责"贴在玩家外围圆上"
      * 与"玩家贴近屏幕边缘时压回屏内"两件事，不再参与任何抓取判定。
      */
     private cursorOrbitLocal(): { x: number; y: number } {
-        const dx = this.m_CursorX - this.m_PlayerX;
-        const dy = this.m_CursorY - this.m_PlayerY;
+        const dir = this.aimDirFromPlayer();
+        const dx = dir.x;
+        const dy = dir.y;
         const len = Math.sqrt(dx * dx + dy * dy);
         const r = this.m_OrbitRadius > 0 ? this.m_OrbitRadius : GameTuning.cellSize;
         let ox = 0;
@@ -1103,11 +1114,24 @@ export class BattleView extends Component {
         return { x: wx - this.m_PlayerX, y: wy - this.m_PlayerY };
     }
 
-    /** 浮标贴到玩家外围圆上（浮标是玩家子节点，给局部坐标即可） */
+    /**
+     * 浮标贴到玩家外围圆上（浮标是玩家子节点，给局部坐标即可），并让它**朝向瞄准方向**。
+     *
+     * 游标图（game_cursor 40×56）的箭头在原始朝向里是**朝上**的，和子弹贴图同一个约定，
+     * 所以直接复用 `faceVelocity`（`atan2 − 90`）。
+     *
+     * ⚠️ 朝向用**未夹取**的瞄准方向（`aimDirFromPlayer`），不是夹取后的实际偏移：
+     * 玩家贴到屏幕边缘时浮标会被压回屏内、位置与真实瞄准方向出现偏差，
+     * 但它此时仍然是"我要往哪打"的指示器（策划案 §4：方向 = 玩家 → 瞄准点），
+     * 这时候箭头跟着位置歪掉反而是在说谎。
+     */
     private syncCursorNode(): void {
         if (!this.m_CursorNode || !this.m_CursorNode.isValid) return;
         const orbit = this.cursorOrbitLocal();
         setPos(this.m_CursorNode, orbit.x, orbit.y);
+
+        const dir = this.aimDirFromPlayer();
+        faceVelocity(this.m_CursorNode, dir.x, dir.y);
     }
 
     /**
