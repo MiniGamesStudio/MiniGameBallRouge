@@ -83,6 +83,18 @@ export function buildWavePlan(wave: number, rng: IRandom, options: WaveBuildOpti
     const scaling = waveScaling(wave);
     const targetRows = scaling.rows;
 
+    // v1.14 开局首波：整波做成**一个多行方阵**，由 buildSpawnSchedule 在 t = 0 一次性出生。
+    // 行数 = max(公式行数, firstWaveMinRows) —— 公式只有 3 行也要铺满 4 行（"至少 4 行"）；
+    // 公式比 4 大时按公式（"有多少行就出多少行"），只是不会超过 maxEnemyRowSpan = 4 的带上限。
+    // 为什么必须合成**一条带**：出生 y 只由 `rowOffset` 决定（见 createEnemyRuntime），
+    // 多条带同时出生会全部落在同一条出生线上、彼此重叠；一条多行带才是"上下叠好的方阵"。
+    // 最后一波不走开场方阵（如果关卡只有 1 波，isFinalWave 时仍要按原逻辑出 BOSS）。
+    if (!options.isFinalWave && Math.max(1, Math.floor(wave)) === 1) {
+        const rows = Math.max(Math.ceil(targetRows), Math.ceil(GameTuning.firstWaveMinRows));
+        const band = buildOpeningBand(wave, rng, opts, rows);
+        return { wave, bands: [band], totalRows: band.rows };
+    }
+
     const bands: BandPlan[] = [];
     let totalRows = 0;
     let bandIndex = 0;
@@ -181,6 +193,20 @@ function buildBigBand(wave: number, rng: IRandom, opts: Required<Omit<WaveBuildO
 
 /** 造一条 1 行带：1 格与 2 格横混排 */
 function buildSingleRowBand(wave: number, rng: IRandom, opts: Required<Omit<WaveBuildOptions, 'isFinalWave'>>): BandPlan {
+    return { rows: 1, hasBigEnemy: false, enemies: buildRowEnemies(wave, rng, opts, 0) };
+}
+
+/**
+ * 造**一行**敌人（v1.14 从 `buildSingleRowBand` 里抽出来，供开场方阵复用）。
+ *
+ * @param rowOffset 这一行在这条带里的行偏移（0 起）—— 开场方阵的第 2、3… 行靠它叠下去
+ */
+function buildRowEnemies(
+    wave: number,
+    rng: IRandom,
+    opts: Required<Omit<WaveBuildOptions, 'isFinalWave'>>,
+    rowOffset: number
+): EnemySpawnSpec[] {
     const enemies: EnemySpawnSpec[] = [];
     let col = 0;
 
@@ -198,7 +224,7 @@ function buildSingleRowBand(wave: number, rng: IRandom, opts: Required<Omit<Wave
                 col,
                 cols: 2,
                 rows: 1,
-                rowOffset: 0,
+                rowOffset,
             });
             col += 2;
             continue;
@@ -219,7 +245,7 @@ function buildSingleRowBand(wave: number, rng: IRandom, opts: Required<Omit<Wave
             col,
             cols: 1,
             rows: 1,
-            rowOffset: 0,
+            rowOffset,
         });
         col += 1;
     }
@@ -235,11 +261,33 @@ function buildSingleRowBand(wave: number, rng: IRandom, opts: Required<Omit<Wave
             col: RandomUtil.int(rng, 0, GameTuning.columns - 1),
             cols: 1,
             rows: 1,
-            rowOffset: 0,
+            rowOffset,
         });
     }
 
-    return { rows: 1, hasBigEnemy: false, enemies };
+    return enemies;
+}
+
+/**
+ * 造**开场方阵**带（v1.14）：`rows` 行整行排满，全部行**同时**出生。
+ *
+ * 与 `buildBigBand` 的区别：不开局放 BOSS（沿用"开局第一带不出大怪"的缓冲），
+ * 只是一块 5 列 × rows 行的小怪方阵 —— 进入游戏立刻有满屏目标，而不是每隔 5 秒滴一行。
+ * 行数上限受 `maxEnemyRowSpan`（= 4）约束 —— 这里把入参夹到 `[1, 4]`
+ * （`maxEnemyRowSpan` 同时是"单个敌人最多占几行"和"一条带最多几行"的上界，见 Rules.test）。
+ */
+function buildOpeningBand(
+    wave: number,
+    rng: IRandom,
+    opts: Required<Omit<WaveBuildOptions, 'isFinalWave'>>,
+    rows: number
+): BandPlan {
+    const rowCount = Math.max(1, Math.min(GameTuning.maxEnemyRowSpan, Math.floor(rows)));
+    const enemies: EnemySpawnSpec[] = [];
+    for (let r = 0; r < rowCount; r++) {
+        enemies.push(...buildRowEnemies(wave, rng, opts, r));
+    }
+    return { rows: rowCount, hasBigEnemy: false, enemies };
 }
 
 /**
@@ -277,6 +325,12 @@ export function buildSpawnSchedule(plan: WavePlan, options: WaveBuildOptions = {
     const events: SpawnEvent[] = [];
     const speed = Math.max(1, waveScaling(plan.wave).fallSpeed);
     const rowGap = (GameTuning.cellSize * GameTuning.rowGapCells) / speed;
+    // v1.14 首波是「开场方阵」（整波只有一条多行带）：所有行在 t = 0 一起出生，
+    // 所以**必须关掉列错峰**。错峰会让"不同列、纵向相邻"的两只少吃 `stagger × speed`
+    // （第 1 波 0.08 × 30 = 2.4px），同列纵向间距就不再是整格 → 违反
+    // "列重叠的敌人纵向不重叠"不变量（Rules.test 的 assertNoVerticalOverlap）。
+    // 关掉后同列同延迟，行间距恰好 = rows × cellSize，天然满足。
+    const isOpeningWave = Math.max(1, Math.floor(plan.wave)) === 1;
 
     // 行时钟：每个带出生前，前面已出生的内容必须先下落完"本带行数"的时间
     let clock = 0;
@@ -310,7 +364,7 @@ export function buildSpawnSchedule(plan: WavePlan, options: WaveBuildOptions = {
         if (b > 0) clock += Math.max(band.rows, prevRows) * rowGap + prevDelayBudget;
         const startTime = clock;
         const stagger =
-            maxRank > 0
+            !isOpeningWave && maxRank > 0
                 ? Math.min(GameTuning.spawnStagger, (rowGap * GameTuning.spawnStaggerBudget) / maxRank)
                 : 0;
 

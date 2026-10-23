@@ -127,8 +127,18 @@ export const GameTuning = {
      * 见 BattleView.updateWaveFlow()。
      */
     waveInterval: 10,
-    /** 第 1 波行数 */
+    /** 第 1 波行数（若小于 `firstWaveMinRows`，首波按后者铺满） */
     baseRowsPerWave: 3,
+    /**
+     * 开局首波的行数下限（v1.14）。
+     *
+     * 首波**不再一行一行往下滴**：整波排成一个 `rows` 行的方阵，在 **t = 0 一次性出生**
+     * （见 `WaveBuilder.buildWavePlan / buildSpawnSchedule` 的首波分支）。
+     * 行数取 `max(ceil(waveScaling(1).rows), 本值)`：
+     *   · 按波次公式排出来**不够 4 行 → 补到 4 行**（"进入游戏后至少出 4 行怪"）；
+     *   · 公式更大时用公式值，**不截断**（"不够 4 行的全部出完"的另一半：一波有多少行就出多少行）。
+     */
+    firstWaveMinRows: 4,
     /** 每波行数增量 */
     rowsPerWaveGrowth: 0.5,
     /** 同时在场的行数上限 */

@@ -200,6 +200,33 @@ describe('波次装箱（需求 2/3 的关键不变量）', () => {
         }
     });
 
+    it('开场首波（v1.14）：一条多行方阵带，至少 firstWaveMinRows 行，t=0 全部出生', () => {
+        for (const seed of [1, 7, 42, 2024]) {
+            const plan = buildWavePlan(1, new SeededRandom(seed));
+            expect(plan.bands.length).toBe(1);
+
+            const band = plan.bands[0];
+            expect(band.rows).toBeGreaterThanOrEqual(GameTuning.firstWaveMinRows);
+            expect(band.rows).toBeLessThanOrEqual(GameTuning.maxEnemyRowSpan);
+            expect(plan.totalRows).toBe(band.rows);
+
+            // 每一行都真的有敌人（方阵不是空行）
+            for (let r = 0; r < band.rows; r++) {
+                expect(band.enemies.some(spec => spec.rowOffset === r)).toBe(true);
+            }
+
+            // "直接出完"：首波没有任何延迟，不是一行一行往下滴
+            const events = buildSpawnSchedule(plan);
+            expect(events.length).toBe(band.enemies.length);
+            for (const event of events) expect(event.delay).toBe(0);
+        }
+    });
+
+    it('非首波仍按带逐批出生（存在延迟 > 0 的事件）', () => {
+        const events = buildSpawnSchedule(buildWavePlan(3, new SeededRandom(5)));
+        expect(Math.max(...events.map(e => e.delay))).toBeGreaterThan(0);
+    });
+
     it('createEnemyRuntime：出生在出生线以上、处于出生动画、满血', () => {
         const rng = new SeededRandom(7);
         const plan = buildWavePlan(2, rng);
