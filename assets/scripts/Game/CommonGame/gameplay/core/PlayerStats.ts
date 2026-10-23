@@ -17,7 +17,10 @@ import { applyExp, expNeed } from './MathModels';
 export interface RunStats {
     hp: number;
     maxHp: number;
-    /** 弹匣容量 */
+    /**
+     * 弹匣容量 —— **只由外围养成决定**（v1.15 起局内技能池里没有扩容卡）。
+     * 局内恒为 `GameTuning.bulletCount`，这里保留字段是给外围养成 / 存档接线用的。
+     */
     bulletCount: number;
     /** 开火间隔（s） */
     fireInterval: number;
@@ -85,15 +88,9 @@ export interface SkillDef {
 
 /** 技能池（P0 最小集） */
 export const SKILL_POOL: readonly SkillDef[] = [
-    {
-        id: 's_magazine',
-        name: '弹匣扩容',
-        desc: '弹匣 +1',
-        maxLevel: 5,
-        apply: stats => {
-            stats.bulletCount += 1;
-        },
-    },
+    // ⚠️ 局内**没有「弹匣容量」卡**（v1.15 移除 `s_magazine`）：
+    // 弹匣容量属于**外围养成**（局外成长），不在三选一里出。
+    // 因此一局内 `bulletCount` 恒为 `GameTuning.bulletCount`，只有外围养成会改它。
     {
         id: 's_power',
         name: '攻击强化',
