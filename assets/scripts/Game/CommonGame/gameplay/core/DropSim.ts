@@ -22,7 +22,7 @@
  * 结算与消失（v1.10 修订，**严格分开**，见 `DropOutcome`）：
  *   · **唯一收益路径 = 进入玩家吸收范围**（`distance(drop, player) <= world.pickupRadius`）→ `Collected`
  *     → 玩法层调既有的 `BattleView.collectDrop()`（磁吸只是"把掉落物送进吸收范围"的手段，不是结算路径）；
- *   · **消失 = 越过屏幕底边再往下 `dropDespawnBelowScreen`(30) px** → `Fell` → 玩法层**只销毁节点、绝不结算**
+ *   · **消失 = 越过屏幕底边再往下 `dropDespawnBelowScreen`(19) px** → `Fell` → 玩法层**只销毁节点、绝不结算**
  *     （隔空加经验 / 金币不是玩法口径）；掉落物会一路下移**穿过** `diveLineY`，玩家在更低处仍能捡到；
  *   · **存活计时 `drop.life` 不参与生死**：耗尽既不结算、也不移除（只作计数 / 未来"最后 3 s 闪烁"钩子）。
  *

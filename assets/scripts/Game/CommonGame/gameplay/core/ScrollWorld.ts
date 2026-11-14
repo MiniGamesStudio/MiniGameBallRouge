@@ -21,7 +21,7 @@
  *     再在每块**顶部**用 alpha 渐变把"被裁掉的那些行"淡入（见 `seamFadeStrips`）——
  *     于是接缝处相邻的两行在原图里**本来就是相邻行**，接缝**按构造消失**；
  *   · **程序化网格（兜底）**：网格线间距 = `cellSize` 且 H 是 `cellSize` 的整数倍
- *     （`backgroundGridPatternHeight` = 768 = 6 × `cellSize`）→ 回绕前后逐像素相同。
+ *     （`backgroundGridPatternHeight` = 720 = 9 × `cellSize`）→ 回绕前后逐像素相同。
  */
 
 /** 一帧世界推进的结果 */
@@ -104,7 +104,7 @@ export function advanceWorldScroll(
  * 于是最坏情况要覆盖「可视高度 + H」→ `N = ceil(可视高度 ÷ H) + 1`。
  *
  * ⚠️ 这个块数是「任意 offset 下都不出现空隙」的**充分条件**，不要凭手感取 2 ——
- * 背景周期 H 小于可视高度时两块是盖不满的（H = 768、可视高 1408 时需要 3 块）。
+ * 背景周期 H 小于可视高度时两块是盖不满的（H = 720、可视高 1408 时需要 3 块）。
  *
  * @param viewHeight 需要覆盖的高度 px（含回绕余量，见 `gridAlignedBottom`）
  */
@@ -143,12 +143,12 @@ export function backgroundTileBottomY(
 }
 
 /**
- * 其它取值都不可用时的背景周期兜底值：沿用 v1.10 的网格周期 768 = 6 × `cellSize`。
+ * 其它取值都不可用时的背景周期兜底值：取网格周期 **720 = 9 × `cellSize`(80)**。
  *
  * ⚠️ 兜底必须返回**有限正数**而不是 0：0 会让 `backgroundTileCount()` 退化成 1 块
  * → 屏幕上立刻出现空隙。
  */
-export const FALLBACK_PATTERN_HEIGHT = 768;
+export const FALLBACK_PATTERN_HEIGHT = 720;
 
 /**
  * **背景块周期（= 回绕周期）= 背景块自身的显示高度**（真实美术路径）。

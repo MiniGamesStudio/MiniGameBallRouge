@@ -1,5 +1,5 @@
 /**
- * L1 单测：掉落物接入**滚动世界**（v1.10）+ **v1.10 修订口径**（只有吸收范围才结算 / 屏幕底 −30 才消失 / 磁吸可向上）
+ * L1 单测：掉落物接入**滚动世界**（v1.10）+ **v1.10 修订口径**（只有吸收范围才结算 / 屏幕底 −19 才消失 / 磁吸可向上）
  *
  * 对应策划案 §11.1（散落）、§11.3（拾取与消失）、§24.5（数值）、§24.8 与**附录 K-4 / K-8**。
  * 全部是纯逻辑（不依赖 cc），被测对象是 core/DropSim.ts + core/ScrollWorld.ts + core/EnemySim.ts。
@@ -12,7 +12,7 @@
  *      且**世界暂停时磁吸照常**（磁吸是玩家侧行为，与"俯冲不受世界暂停影响"同口径）；
  *   ④ **只有进入吸收范围才结算**：`pickupRadius` 是**唯一**能产生收益的路径（`Collected`）。
  *      越俯冲线、寿命耗尽、一路滚到屏幕底 —— **一条都不结算**（`settleCalls === 0` 且账本为空）；
- *   ⑤ **消失 = 越过屏幕底边再往下 `dropDespawnBelowScreen`(30) px**：返回 `Fell`（与 `Collected`
+ *   ⑤ **消失 = 越过屏幕底边再往下 `dropDespawnBelowScreen`(19) px**：返回 `Fell`（与 `Collected`
  *      **严格区分**）→ 视图层**只销毁节点、绝不结算**；没到线就**不消失**（这就是"更晚消失"）；
  *   ⑥ **绝不向上移动**（`dropNeverMovesUp`）：逐帧断言 `y_new <= y_prev`；玩家在掉落物**上方**时，
  *      磁吸只能**横向**靠拢（`x` 照常被吸），**抬不起**掉落物。
@@ -363,7 +363,7 @@ describe('世界暂停：掉落物与敌人 / 背景一起停，恢复后不跳�
         expect(frozenLife0 - 180 * DT).toBeLessThan(0); // 反证：计时若照走，这 3 秒早把它扣成负数
 
         // ② 磁吸照常：世界暂停时磁吸仍然生效（magnetized 置位 + 一路朝玩家飞），且寿命同样冻结
-        const magnet = makeDrop(34, 0, PLAYER_Y + 150); // 玩家正下方 150px（磁吸范围内、拾取范围外）
+        const magnet = makeDrop(34, 0, PLAYER_Y + 80); // 玩家正下方 80px（磁吸范围内、拾取范围外）
         const magnetWorld = makeWorld({ magnetRadius: GameTuning.magnetRadius, scrollDelta: 0 }); // 世界暂停
         const magnetLife0 = magnet.life;
         const magnetY0 = magnet.y;
@@ -393,7 +393,7 @@ describe('世界暂停：掉落物与敌人 / 背景一起停，恢复后不跳�
 
     it('暂停时「**磁吸照常**」与「**寿命冻结**」**同时**成立（同一帧、逐帧断言满 180 帧）', () => {
         // 把磁吸放慢到 1 px/s：掉落物在暂停的 3 秒里始终留在场上 → 两件事可以**同帧**逐帧断言
-        const drop = makeDrop(36, 0, PLAYER_Y + 150); // 磁吸范围内、拾取范围外
+        const drop = makeDrop(36, 0, PLAYER_Y + 80); // 磁吸范围内、拾取范围外
         drop.life = DT; // 只剩一帧：寿命若照走，第 1 帧就扣成负数
         const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, magnetSpeed: 1, scrollDelta: 0 });
         const life0 = drop.life;
@@ -417,8 +417,8 @@ describe('世界暂停：掉落物与敌人 / 背景一起停，恢复后不跳�
 describe('磁吸：**叠加**在滚动位移之上（不覆盖、不替换）', () => {
     it('两者同时生效时，向下位移 = 滚动位移 + 磁吸位移（精确相加）', () => {
         const MAGNET = GameTuning.magnetRadius;
-        const d0 = 150; // 玩家在掉落物**正下方** 150px：已进入磁吸范围、未进拾取范围
-        const magnetStep = GameTuning.magnetSpeed * DT; // 1120 × 1/60 ≈ 18.67
+        const d0 = 80; // 玩家在掉落物**正下方** 80px（磁吸范围内、拾取范围外）
+        const magnetStep = GameTuning.magnetSpeed * DT; // 700 × 1/60 ≈ 11.67
 
         // ① 只有磁吸（世界暂停）：位移 = magnetStep（朝玩家）
         const a = makeDrop(41, 0, PLAYER_Y + d0);
@@ -442,7 +442,7 @@ describe('磁吸：**叠加**在滚动位移之上（不覆盖、不替换）', 
 
     it('顺序等价性：一帧内"滚动 + 磁吸" === 先跑一帧纯滚动、再跑一帧纯磁吸', () => {
         const MAGNET = GameTuning.magnetRadius;
-        const start = PLAYER_Y + 150; // 已在磁吸范围内（192）、仍在拾取范围外（38）
+        const start = PLAYER_Y + 80; // 已在磁吸范围内（120）、仍在拾取范围外（24）
 
         // 一帧内两步都做
         const both = makeDrop(44, 40, start);
@@ -472,7 +472,7 @@ describe('磁吸：**叠加**在滚动位移之上（不覆盖、不替换）', 
     });
 
     it('进入磁吸范围后**永久吸附**（同既有口径：`magnetized` 不再复位）', () => {
-        const drop = makeDrop(48, 0, PLAYER_Y + 150);
+        const drop = makeDrop(48, 0, PLAYER_Y + 80);
         const world = makeWorld({ magnetRadius: GameTuning.magnetRadius });
         stepDrop(drop, DT, world);
         expect(drop.magnetized).toBe(true);
@@ -511,7 +511,7 @@ describe('俯冲线不再是收取线（v1.10 修订：越线继续向下，直�
             if (drop.y <= GameTuning.diveLineY) crossedAt = frames;
         }
 
-        expect(crossedAt).toBeGreaterThan(25); // 10px ÷ 0.333px/帧 ≈ 30 帧
+        expect(crossedAt).toBeGreaterThan(25); // 10px ÷ 0.3125px/帧 ≈ 32 帧
         expect(crossedAt).toBeLessThan(40);
         expect(settleCalls).toBe(0); // 越线**不**走结算
         expect(drop.y).toBeLessThanOrEqual(GameTuning.diveLineY);
@@ -566,7 +566,7 @@ describe('俯冲线不再是收取线（v1.10 修订：越线继续向下，直�
         expect('dropAutoCollectOnTimeout' in GameTuning).toBe(false);
         // 替代它的新口径（见 §24.8 / K-4）：出屏线 + **磁吸可向上**（v1.10 修订**已删除** `dropNeverMovesUp` 夹取）
         expect('dropNeverMovesUp' in GameTuning).toBe(false);
-        expect(GameTuning.dropDespawnBelowScreen).toBe(30);
+        expect(GameTuning.dropDespawnBelowScreen).toBe(19);
 
         // 越线之后还会继续往下走很远才消失（旧口径下这里早就被"收"走了）
         const drop = makeDrop(56, 0, GameTuning.diveLineY - 1);
@@ -803,9 +803,9 @@ describe('寿命（life）：**不参与生死**（耗尽既不结算、也不�
  */
 describe('磁吸可向上（v1.10 修订：撤销"绝不向上"夹取 → 玩家在掉落物上方也能被吸收）', () => {
     it('玩家在掉落物**正上方** + 世界暂停：磁吸把它**向上**吸走 → 进 pickupRadius → Collected **恰好 1 次**（旧代码必失败）', () => {
-        const playerY = 760; // 玩家在掉落物**上方** 160px
+        const playerY = 760; // 玩家在掉落物**上方** 100px
         const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, playerX: 0, playerY, scrollDelta: 0 });
-        const drop = makeDrop(81, 100, 600); // 距离 ≈ 188.7 ≤ 192 → 一进来就吸附
+        const drop = makeDrop(81, 40, 660); // 距离 ≈ 107.7 ≤ 120 → 一进来就吸附
         const y0 = drop.y;
         let prevY = drop.y;
         let prevX = drop.x;
@@ -835,7 +835,7 @@ describe('磁吸可向上（v1.10 修订：撤销"绝不向上"夹取 → 玩家
         expect(drop.y).toBeGreaterThan(y0); // 净上升
         expect(drop.magnetized).toBe(true);
         expect(drop.x).toBeLessThan(100); // x 也一路靠拢
-        // ④ 最终**进了吸收范围** → 结算**恰好一次**：旧代码里 y 被钉在 y0 → 距离恒 ≥ 160 > 38 → 永远吸不到
+        // ④ 最终**进了吸收范围** → 结算**恰好一次**：旧代码里 y 被钉在 y0 → 距离恒 ≥ 100 > 24 → 永远吸不到
         expect(collectedAt).toBeGreaterThan(0);
         expect(settleCalls).toBe(1);
         expect(ledger.exp).toBeGreaterThan(0); // 经验真的进账了
@@ -847,7 +847,7 @@ describe('磁吸可向上（v1.10 修订：撤销"绝不向上"夹取 → 玩家
 
     it('玩家在掉落物**斜上方**（既有上、又有横向偏移）：斜向上被吸走 → 最终吸收（边界）', () => {
         const world = makeWorld({ magnetRadius: GameTuning.magnetRadius, playerX: 140, playerY: 700, scrollDelta: 0 });
-        const drop = makeDrop(87, 100, 600); // 玩家在**右上方**：dx = +40、dy = +100（距离 ≈ 107.7 ≤ 192）
+        const drop = makeDrop(87, 100, 600); // 玩家在**右上方**：dx = +40、dy = +100（距离 ≈ 107.7 ≤ 120）
         const y0 = drop.y;
         let prevY = drop.y;
         let prevX = drop.x;
@@ -909,7 +909,7 @@ describe('磁吸可向上（v1.10 修订：撤销"绝不向上"夹取 → 玩家
 
     it('玩家在掉落物**下方**（向下磁吸）：位移仍 = 滚动 + 磁吸（新口径不改变"向下"这一侧）', () => {
         const MAGNET = GameTuning.magnetRadius;
-        const d0 = 150; // 玩家在掉落物**正下方** 150px
+        const d0 = 80; // 玩家在掉落物**正下方** 80px（磁吸范围内、拾取范围外）
         const magnetStep = GameTuning.magnetSpeed * DT;
 
         // ① 只有磁吸（世界暂停）：位移仍是完整的 magnetStep
@@ -926,12 +926,12 @@ describe('磁吸可向上（v1.10 修订：撤销"绝不向上"夹取 → 玩家
     });
 });
 
-describe('出屏消失：越过屏幕底边再往下 30 px 才移除，且**绝不结算**', () => {
-    it('阈值 = 屏幕底边 − `dropDespawnBelowScreen`（独立复算）；屏幕底与 −30 之间**仍 Alive**（更晚消失）', () => {
+describe('出屏消失：越过屏幕底边再往下 19 px 才移除，且**绝不结算**', () => {
+    it('阈值 = 屏幕底边 − `dropDespawnBelowScreen`（独立复算）；屏幕底与 −19 之间**仍 Alive**（更晚消失）', () => {
         // 公式独立复算一遍（不只看 dropDespawnY() 自己）
         expect(dropDespawnY()).toBeCloseTo(BOTTOM - GameTuning.dropDespawnBelowScreen, 9);
-        expect(GameTuning.dropDespawnBelowScreen).toBe(30); // 正值 = 越过屏幕底**再往下** 30px 才消失
-        expect(BOTTOM - dropDespawnY()).toBeCloseTo(30, 9);
+        expect(GameTuning.dropDespawnBelowScreen).toBe(19); // 正值 = 越过屏幕底**再往下** 19px 才消失
+        expect(BOTTOM - dropDespawnY()).toBeCloseTo(19, 9);
         expect(dropDespawnY()).toBeLessThan(BOTTOM);
 
         // 起点：正好在**屏幕底边**（刚出屏，离阈值还差 30px）
@@ -1022,12 +1022,12 @@ describe('出屏消失：越过屏幕底边再往下 30 px 才移除，且**绝�
 
             GameTuning.dropDespawnBelowScreen = 200; // 更晚消失
             expect(dropDespawnY()).toBeCloseTo(BOTTOM - 200, 9);
-            expect(at(123, BOTTOM - 100)).toBe(DropOutcome.Alive); // 在默认 30 下会消失的位置，现在仍活着
+            expect(at(123, BOTTOM - 100)).toBe(DropOutcome.Alive); // 在默认 19 下会消失的位置，现在仍活着
             expect(at(124, BOTTOM - 200)).toBe(DropOutcome.Fell);
         } finally {
             GameTuning.dropDespawnBelowScreen = original; // 必须还原，否则污染后续用例
         }
-        expect(GameTuning.dropDespawnBelowScreen).toBe(30); // 已还原
+        expect(GameTuning.dropDespawnBelowScreen).toBe(19); // 已还原
     });
 });
 
@@ -1100,8 +1100,8 @@ describe('只有进入吸收范围才结算（全生命周期 settleCalls === 0 
         const near = runDropFrames(nearDrops, nearStats, nearLedger, makeWorld({ magnetRadius: 0 }), 1, 0);
         const nearSettle = settleCalls;
 
-        // B 组：放在磁吸范围边缘（180 ≤ 192），靠磁吸一路飞进来才结算
-        const farDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) => makeDrop(500 + i, 0, PLAYER_Y + 180, kind, value));
+        // B 组：放在磁吸范围边缘（80 ≤ 120），靠磁吸一路飞进来才结算
+        const farDrops: Array<DropRuntime | null> = kinds.map(([kind, value], i) => makeDrop(500 + i, 0, PLAYER_Y + 80, kind, value));
         const farStats = createRunStats();
         const farLedger = emptyLedger();
         settleCalls = 0;
@@ -1150,8 +1150,8 @@ describe('编译期契约：两个仿真世界共用同一个必填的 scrollDel
         expect(enemyY0 - enemy.y).toBeCloseTo(dropY0 - drop.y, 12); // 一位不差
     });
 
-    it('掉落实源：`dropDespawnBelowScreen` = 30；`dropNeverMovesUp` 与两个"自动收取"开关**都已删除**', () => {
-        expect(GameTuning.dropDespawnBelowScreen).toBe(30);
+    it('掉落实源：`dropDespawnBelowScreen` = 19；`dropNeverMovesUp` 与两个"自动收取"开关**都已删除**', () => {
+        expect(GameTuning.dropDespawnBelowScreen).toBe(19);
         expect(typeof GameTuning.dropDespawnBelowScreen).toBe('number');
         // v1.10 修订：撤销"绝不向上"夹取（磁吸允许向上 → 玩家在上方也能吸收）→ 该键**整体删除**
         expect('dropNeverMovesUp' in GameTuning).toBe(false);
@@ -1292,7 +1292,7 @@ describe('已结算闸门（v1.10 加固）：吸收过的掉落物**永不再�
         expect(stats.level).toBe(1);
     });
 
-    it('模拟"忘记移除"：故意不移出场、连跑 300 帧（期间它越过俯冲线与屏幕底 −30）——结算次数仍 === 1、账本不变', () => {
+    it('模拟"忘记移除"：故意不移出场、连跑 300 帧（期间它越过俯冲线与屏幕底 −19）——结算次数仍 === 1、账本不变', () => {
         // 起始：玩家与掉落物都在出生点 → 第 1 帧必被吸收
         const drop = makeDrop(621, 0, PLAYER_Y, DropKind.Coin, 7);
         const stats = createRunStats();
@@ -1326,7 +1326,7 @@ describe('已结算闸门（v1.10 加固）：吸收过的掉落物**永不再�
         expect(settleCalls).toBe(1); // ← 这条就是原来那个线上 bug：漏了移除也**只结算一次**
         expect(ledger).toEqual(settledLedger); // 账本一分没变（金币仍是 7，不是 7 × 301）
         expect(drop.y).toBeLessThan(GameTuning.diveLineY); // 确实越过了俯冲线
-        expect(drop.y).toBeLessThanOrEqual(dropDespawnY()); // 也确实越过了"屏幕底 −30"
+        expect(drop.y).toBeLessThanOrEqual(dropDespawnY()); // 也确实越过了"屏幕底 −19"
         expect(framesBelowDespawn).toBeGreaterThan(50); // 有 70+ 帧是在出屏线**下方**被反复 stepDrop 的
         expect(drop.collected).toBe(true);
     });
@@ -1346,7 +1346,7 @@ describe('已结算闸门（v1.10 加固）：吸收过的掉落物**永不再�
 
         const world = makeWorld({ magnetRadius: 0, playerX: 0, playerY: PLAYER_Y });
 
-        // ② 越过出屏线（屏幕底 −30 = -697）：**不许**返回 Fell（更不许返回 Collected）—— 只回 Alive
+        // ② 越过出屏线（屏幕底 −19 = -686）：**不许**返回 Fell（更不许返回 Collected）—— 只回 Alive
         settled.y = dropDespawnY() - 0.5;
         expect(stepDrop(settled, DT, world)).toBe(DropOutcome.Alive);
         settled.y = dropDespawnY() - 5000; // 掉到屏幕下方 5000px 也照样只回 Alive

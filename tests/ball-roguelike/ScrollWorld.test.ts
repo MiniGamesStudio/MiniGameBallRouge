@@ -39,7 +39,7 @@ import { screenBounds } from '../../assets/scripts/Game/CommonGame/gameplay/core
 
 const DT = 1 / 60;
 /**
- * 周期 H —— 这里取的是**网格兜底**路径的周期（`backgroundGridPatternHeight` = 768 = 6 格）。
+ * 周期 H —— 这里取的是**网格兜底**路径的周期（`backgroundGridPatternHeight` = 720 = 9 格）。
  *
  * 为什么不是 `backgroundPatternHeight`：那一项现在是**真实美术路径**的开关，
  * 默认 **0 = 自动**（= `m_GameBg` 的实际显示高度，见 `resolvePatternHeight`）。
@@ -190,7 +190,7 @@ describe('世界推进 advanceWorldScroll / effectiveScrollDelta（唯一滚动�
 });
 
 describe('背景拼接：块数保证无空隙（§9.2）', () => {
-    it('本配置（可视高 1408 / 周期 768）需要 3 块 —— 与"两块或三块"一致', () => {
+    it('本配置（可视高 1408 / 周期 720）需要 3 块 —— 与"两块或三块"一致', () => {
         const { baseY, count, top, bottom } = layout();
         expect(count).toBe(3);
         expect(backgroundTileCount(screenBounds().top - baseY, H)).toBe(3);
@@ -259,7 +259,7 @@ describe('网格基准与敌人占格对齐（§9.2 / §5）', () => {
 
     it('周期 H 是 cellSize 的整数倍（网格间距才等于一格，回绕才对得上格点）', () => {
         expect(H % CELL).toBe(0);
-        expect(H / CELL).toBe(6);
+        expect(H / CELL).toBe(9);
         expect(GameTuning.backgroundGridPatternHeight).toBeGreaterThan(0);
         // 真实美术路径的周期是"自动"（0 = 用节点显示高度），所以它**不该**被网格约束
         expect(GameTuning.backgroundPatternHeight).toBe(0);

@@ -146,8 +146,8 @@ function buildBigBand(wave: number, rng: IRandom, opts: Required<Omit<WaveBuildO
     for (let r = 0; r < bandRows; r++) occupied.push(new Array(GameTuning.columns).fill(false));
     const enemies: EnemySpawnSpec[] = [];
     // BOSS 固定摆在棋盘**正中间**（不再随机列）：
-    // 5 列棋盘放 2 列宽的竖版 BOSS 时居中是"半格"（(5−2)/2 = 1.5），
-    // 取 ⌊…⌋ 落到偏左的那一组（占 1~2 列）；列数/体型变化时这条公式自动居中。
+    // 9 列棋盘放 2 列宽的竖版 BOSS 时居中是"半格"（(9−2)/2 = 3.5），
+    // 取 ⌊…⌋ 落到偏左的那一组（占 3~4 列）；列数/体型变化时这条公式自动居中。
     const startCol = Math.floor((GameTuning.columns - bigCols) / 2);
     // 需求 2：4/6/8 格都算 BOSS —— 4 格是「小BOSS」，6/8 格是「大BOSS」
     const bigType = bigShape === EnemyShape.Quad ? EnemyType.MiniBoss : EnemyType.Boss;
@@ -272,7 +272,7 @@ function buildRowEnemies(
  * 造**开场方阵**带（v1.14）：`rows` 行整行排满，全部行**同时**出生。
  *
  * 与 `buildBigBand` 的区别：不开局放 BOSS（沿用"开局第一带不出大怪"的缓冲），
- * 只是一块 5 列 × rows 行的小怪方阵 —— 进入游戏立刻有满屏目标，而不是每隔 5 秒滴一行。
+ * 只是一块 `columns` 列 × rows 行的小怪方阵 —— 进入游戏立刻有满屏目标，而不是每隔 5 秒滴一行。
  * 行数上限受 `maxEnemyRowSpan`（= 4）约束 —— 这里把入参夹到 `[1, 4]`
  * （`maxEnemyRowSpan` 同时是"单个敌人最多占几行"和"一条带最多几行"的上界，见 Rules.test）。
  */
@@ -360,7 +360,7 @@ export function buildSpawnSchedule(plan: WavePlan, options: WaveBuildOptions = {
         // 两格大怪的盒子会从出生点往上顶半格，所以间距必须按"本带自己的行数"留，
         // 否则新带的盒子上沿会插进上一带里（实测重叠 22px 就是这么来的）。
         // 另外要把上一带的错峰延迟补进时钟，否则"少落一段"的敌人会和新带贴住
-        // （竖版 BOSS 让带高变成 3~4 行后，实测 1 行带只剩 124px < 一格 128px）。
+        // （竖版 BOSS 让带高变成 3~4 行后，1 行带只剩不到一格 `cellSize` 的余量）。
         if (b > 0) clock += Math.max(band.rows, prevRows) * rowGap + prevDelayBudget;
         const startTime = clock;
         const stagger =

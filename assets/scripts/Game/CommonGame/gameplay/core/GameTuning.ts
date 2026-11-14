@@ -16,13 +16,17 @@ export const GameTuning = {
     /** 设计分辨率高 */
     designHeight: 1334,
     /**
-     * 格边长（px）。128×128 与品质底图素材（white/green/blue/purple/yellow/red）一比一。
-     * ⚠️ 从 80 改成 128 时，所有「px 绝对值」类数值按 1.6 等比缩放以保持手感，
-     * 以「格」或「秒」为单位的数值不动（rowGapCells / spawnStagger 等）。
+     * 格边长（px）。**当前为 80**：9 列 × 80 = 720 px，正好放进 750 设计宽度（左右各留 15 px）。
+     *
+     * ⚠️ 它是**整个视觉层的基准尺度**（敌人占格、玩家 / 子弹 / 掉落物的大小、飘字字号都按它算）。
+     * 历史约定：cellSize 从 80 → 128 时，所有「px 绝对值」类数值按 1.6 等比缩放以保持手感；
+     * 这次为了「每行最多 9 个」从 128 → 80，下面这些 px 数值**按 0.625 缩回去了**
+     *（以「格」或「秒」为单位的数值不动：rowGapCells / spawnStagger / 各种 CD 等）。
+     * 128×128 的品质底图素材仍按 1:1 纹理采样，显示时缩小到 80 —— 不影响九宫格切边。
      */
-    cellSize: 128,
-    /** 棋盘列数 */
-    columns: 5,
+    cellSize: 80,
+    /** 棋盘列数：每行最多 9 个单格敌人（9 × 80 = 720 px，居中） */
+    columns: 9,
     /** 棋盘底边 y */
     boardBottom: -667,
     /** 棋盘顶边 y */
@@ -30,26 +34,26 @@ export const GameTuning = {
     /** 敌人出生线 y（屏幕上方一格） */
     /**
      * 出生线。注意它是出生带的**顶边**，不是敌人中心：
-     * 单格敌人的盒子 = [spawnLineY - cellSize, spawnLineY] = [667, 795]，
-     * 正好整个在可视区上边界（+667）之外，下落后才进入画面。
+     * 单格敌人的盒子 = [spawnLineY - cellSize, spawnLineY] = [587, 667]，
+     * 盒子上沿正好贴住屏幕上边（+667）—— 从出生的第一帧起整只怪就在屏内。
      */
     spawnLineY: 667,
     /** 俯冲线 / 底线 y：敌人自身矩形底边越过它即进入判定 */
     diveLineY: -507,
     /** 玩家出生点距屏幕底部的高度 */
-    playerSpawnBottomOffset: 192,
+    playerSpawnBottomOffset: 120,
     // ─────────── 玩家（§8.6 / 附录 A.1） ───────────
     /** 玩家血量（占位默认值，正式值走 Player 表） */
     playerMaxHp: 100,
-    /** 玩家受击判定半径：故意小于视觉半径（128/2=64），手感更好 */
-    playerHitRadius: 45,
+    /** 玩家受击判定半径：故意小于视觉半径（80/2=40），手感更好 */
+    playerHitRadius: 28,
     /**
      * 抓玩家半径（操作方案 A，见附录 J）：按下点到玩家中心的距离 ≤ 该值 → **移动玩家**，
      * 否则 → **瞄准**。取 1.25 × 玩家球显示半径（`player_001` 80×76 按 contain 适配到一格后
-     * 显示半径 ≈ 58.9px）≈ 74px；比 `playerHitRadius`(45) 宽松，是为了「按住球一定拖得动」，
+     * 显示半径 ≈ 36.8px）≈ 46px；比 `playerHitRadius`(28) 宽松，是为了「按住球一定拖得动」，
      * 而不是「必须精确按在判定圆里」。
      */
-    playerGrabRadius: 74,
+    playerGrabRadius: 46,
     // ─────────── 操作与瞄准（附录 J / v1.9） ───────────
     /**
      * 兜底自动瞄准：**瞄准触摸**空闲多少秒后自动锁定「最近的可命中敌人」（`pickAutoAimTarget`）。
@@ -60,12 +64,12 @@ export const GameTuning = {
     /** 瞄准辅助射线总开关（关掉就不画主射线与反弹段） */
     aimGuideEnabled: true,
     /** 辅助射线宽度 px */
-    aimGuideWidth: 8,
+    aimGuideWidth: 5,
     /** 瞄准射线虚线：段长 px（<=0 退化实线）/ 间隔 px */
-    aimGuideDashLength: 18,
-    aimGuideDashGap: 12,
+    aimGuideDashLength: 11,
+    aimGuideDashGap: 7.5,
     /** 瞄准射线描边：单边宽度 px / 透明度 */
-    aimGuideOutline: 2,
+    aimGuideOutline: 1.5,
     aimGuideOutlineAlpha: 150,
     /** 主射线不透明度（0~255）：半透明白，不遮挡敌人 */
     aimGuideAlpha: 130,
@@ -75,20 +79,20 @@ export const GameTuning = {
      * 首段反弹射线最大长度 px：与「第二次与墙相交」**取短者**。
      * 只约束第一次相交之后的段，主射线永远画满到墙。
      */
-    aimGuideBounceLength: 900,
+    aimGuideBounceLength: 560,
     // ─────────── 子弹（§6.6） ───────────
     /** 弹匣容量 */
     bulletCount: 5,
     /** 开火间隔（s） */
     fireInterval: 0.35,
     /** 子弹速度 px/s */
-    bulletSpeed: 1440,
+    bulletSpeed: 900,
     /** 子弹伤害 */
     bulletDamage: 10,
     /** 子弹半径 px */
-    bulletRadius: 16,
+    bulletRadius: 10,
     /** 回收半径 = 判定半径 + 子弹半径 */
-    catchRadius: 61,
+    catchRadius: 38,
     /** 最长存活（s）：超时强制回身，兜底防死锁 */
     maxBulletLife: 8,
     /** 回身速度倍率 */
@@ -96,7 +100,7 @@ export const GameTuning = {
     /** 免费弹（僚机 / 分裂弹）全局上限 */
     freeBulletMax: 8,
     /** 单帧子步最大位移（防穿模） */
-    maxSubStepDistance: 13,
+    maxSubStepDistance: 8,
     /** 单帧子步上限 */
     maxSubStepCount: 16,
     // ─────────── 敌人（§7） ───────────
@@ -173,7 +177,7 @@ export const GameTuning = {
      * 两者共用同一个 delta（`ScrollWorld.advanceWorldScroll`），行距不变量
      * `rowGapCells × cellSize` 与全部越线/俯冲判定语义都**保持不变**。
      */
-    baseFallSpeed: 30,
+    baseFallSpeed: 18.75,
     /** 每波世界滚动速度成长 */
     fallSpeedGrowth: 0.08,
     /** 世界滚动速度成长上限倍率 */
@@ -202,15 +206,15 @@ export const GameTuning = {
      */
     backgroundPatternHeight: 0,
     /**
-     * **网格兜底**路径的图案周期 px（默认 **768 = 6 × cellSize**）。
+     * **网格兜底**路径的图案周期 px（默认 **720 = 9 × cellSize**）。
      *
-     * 必须取 `cellSize` 的整数倍：网格线间距才恰好等于一格（128px），
+     * 必须取 `cellSize` 的整数倍：网格线间距才恰好等于一格（80px），
      * 而回绕步长又恰好等于一个周期 → 回绕前后画面**逐像素相同**，
      * 拼接**必然无缝**（见 core/ScrollWorld.ts 的不变量 ③）。
-     * 取 768（而不是更大的值）是为了让 1334 高的屏幕**三块**就能盖满：
-     * `backgroundTileCount(1334, 768) = ceil(1334/768) + 1 = 3`。
+     * 取 720（而不是更大的值）是为了让 1334 高的屏幕**三块**就能盖满：
+     * `backgroundTileCount(1334, 720) = ceil(1334/720) + 1 = 3`。
      */
-    backgroundGridPatternHeight: 768,
+    backgroundGridPatternHeight: 720,
     /**
      * 是否**优先用背景节点贴图**（`m_GameBg` 的真实美术），而不是程序化网格。
      *
@@ -256,13 +260,13 @@ export const GameTuning = {
     /** 越线后的判定等待时间（s），此期间可被击杀 */
     diveTelegraph: 1.0,
     /** 俯冲速度 px/s */
-    diveSpeed: 1120,
+    diveSpeed: 700,
     /** 每格俯冲伤害 */
     diveDamagePerCell: 5,
     /** 单次俯冲伤害上限 */
     diveDamageMax: 40,
     /** 俯冲命中玩家的判定半径 */
-    diveHitRadius: 72,
+    diveHitRadius: 45,
     /** 俯冲前放大到的倍数 */
     diveScaleUp: 1.35,
     /** 放大时长（s） */
@@ -271,26 +275,26 @@ export const GameTuning = {
     diveScaleDown: 0.5,
     // ─────────── 掉落与成长（§11） ───────────
     /**
-     * 掉落物散落半径（0.2 格 = 25.6 px，取整 26）。
+     * 掉落物散落半径（0.2 格 = 16 px）。
      *
      * ⚠️ 它是**生成时算一次**的"世界内偏移"（`BattleView.addDrop()` 直接烘进 `drop.x / drop.y`），
      * **不是**每帧的速度 —— 掉落在世界里静止、只被世界滚动带着走（v1.10，见 core/DropSim.ts）。
      */
-    dropScatterRadius: 26,
-    /** 磁吸半径（1.5 格 = 192 px），可被技能/加点提升 */
-    magnetRadius: 192,
+    dropScatterRadius: 16,
+    /** 磁吸半径（1.5 格 = 120 px），可被技能/加点提升 */
+    magnetRadius: 120,
     /** 拾取半径 px：**唯一**的收益结算路径（进入即 Collected → BattleView.collectDrop()）；磁吸只负责把掉落物送进来 */
-    pickupRadius: 38,
+    pickupRadius: 24,
     /** 磁吸飞行速度 px/s（玩家侧行为：**世界暂停时照常**，与滚动位移叠加，见 core/DropSim.ts） */
-    magnetSpeed: 1120,
+    magnetSpeed: 700,
     /** 掉落物存活时间（s）：v1.10 修订起**不参与生死** —— life 耗尽既不结算、也不移除（只作计数 / 未来闪烁钩子）；世界暂停时冻结（dropLifePausesWithWorld） */
     dropLifeTime: 15,
     /**
      * 掉落物**出屏消失**：越过屏幕**底边**（screenBounds().bottom）后再往下这么多 px 才移除。
-     * v1.10 修订：掉落物**只在吸收范围内**才被吸收，否则一路下移到屏幕最下方再 +30 px 才消失（正值 = 更晚消失、<= 0 = 贴屏幕底即消失）。
+     * v1.10 修订：掉落物**只在吸收范围内**才被吸收，否则一路下移到屏幕最下方再 +19 px 才消失（正值 = 更晚消失、<= 0 = 贴屏幕底即消失）。
      * 消失用 DropOutcome.Fell → 玩法层**只销毁节点、绝不结算**；⚠️ 这是**唯一的消失路径**（drop.life 已不参与生死）。
      */
-    dropDespawnBelowScreen: 30,
+    dropDespawnBelowScreen: 19,
     /** 世界暂停（任一敌人被停住）时是否冻结存活计时（true = 冻结；磁吸不受影响、照常生效）。⚠️ life 已不参与生死判定，本项只影响这个计数值 */
     dropLifePausesWithWorld: true,
     /** 升级所需经验：need(n) = 8 + 6(n-1) + 1.5(n-1)^2 */
@@ -389,39 +393,39 @@ export const GameTuning = {
     /** 其中"劈过去"的阶段占比，其余时间用来淡出（0.85 → 0.30s 推进 + 0.05s 淡出） */
     chainLightningRevealRatio: 0.85,
     /** 每个被劈到的目标身上画一个电光爆点：外发光半径 px / 核心半径 px */
-    chainLightningMarkRadius: 34,
+    chainLightningMarkRadius: 21,
     chainLightningMarkGlowScale: 1.4,
     /** 每跳的折线段数（越大越细碎） */
     chainLightningSegments: 7,
     /** 折线垂直抖动幅度 px（中间最大、两端收窄到 0，见 buildBoltPath） */
-    chainLightningJitter: 26,
+    chainLightningJitter: 16,
     /** 重新抖动间隔（s）：每隔这么久重画一次折线 → "电在抖"的闪烁感 */
     chainLightningFlicker: 0.05,
     /** 核心亮线宽度 px / 外发光线宽度 px */
-    chainLightningCoreWidth: 6,
-    chainLightningGlowWidth: 16,
+    chainLightningCoreWidth: 4,
+    chainLightningGlowWidth: 10,
     // ─────────── 美术适配 ───────────
     /**
      * 怪物 / 玩家图在占格内的占比（contain 适配的留白系数）。
-     * 美术原始宽度是 80，而占格是 128 的整数倍：直接按占格缩放会拉变形，
+     * 美术原始宽度是 80，而占格是 `cellSize` 的整数倍：直接按占格缩放会拉变形，
      * 所以按美术自身长宽比算一个统一缩放，再乘这个系数留一点边。
      */
     artFitMargin: 0.92,
     /** 瞄准浮标外围圆半径 = 玩家图显示半径 + 该值 px */
-    cursorOrbitGap: 50,
+    cursorOrbitGap: 31,
     /** 伤害飘字：暴击概率 / 暴击倍率 / 存活时间 s / 上浮距离 px */
     critChance: 0.15,
     critMul: 1.6,
     damageTextLife: 1.0,
-    damageTextRise: 110,
+    damageTextRise: 69,
     /** 飘字弹出：弹出时长 s / 弹出峰值缩放 / 描边宽度 px */
     damageTextPop: 0.15,
     damageTextPopScale: 1.3,
-    damageTextOutline: 2.5,
+    damageTextOutline: 1.6,
     /** 暴击飘字的字号倍率（叠加在各伤害类型自己的基准字号上） */
     damageTextCritScale: 1.35,
     /** 飘字出生点：圆形内随机半径 px（避免多个数字叠在同一位置） */
-    damageTextScatter: 32,
+    damageTextScatter: 20,
     /** 敌人品质底图九宫格切边 px：底图 128×128 的多层描边 + 圆角都在这 16px 之内 */
     baseSliceInset: 16,
     /** 掉落物缩放：尺寸 = cellSize × 基准 × (1 + (value-1) × perValue)，封顶 max */
@@ -470,7 +474,7 @@ export const GameTuning = {
     /** 震屏：普通命中的持续时间（s） */
     screenShakeTime: 0.18,
     /** 震屏：普通命中的最大幅度（px，场空间；随时间平方衰减） */
-    screenShakeAmplitude: 9,
+    screenShakeAmplitude: 6,
     /** 震屏：暴击的幅度倍率 */
     screenShakeCritMul: 1.6,
     /** 震屏：玩家受击的持续时间（s）与幅度倍率 */
@@ -491,7 +495,7 @@ export const GameTuning = {
     /** 敌人受击震动持续时间（s） */
     hitShakeTime: 0.16,
     /** 敌人受击震动幅度（px，左右上下随机抖动，随时间衰减） */
-    hitShakeAmplitude: 5,
+    hitShakeAmplitude: 3,
 };
 /** 数值键名类型，便于后续用配置表覆盖 */
 export type GameTuningKey = keyof typeof GameTuning;

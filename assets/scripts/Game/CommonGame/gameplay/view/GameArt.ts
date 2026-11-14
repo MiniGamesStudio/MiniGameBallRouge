@@ -353,7 +353,7 @@ export function applyCellSize(node: Node, cols: number, rows: number): void {
 
 /**
  * contain 适配：把精灵按美术自身长宽比缩放，塞进 boxW × boxH 内并留出 margin 比例的边。
- * 用于怪物图 / 玩家图叠在占格之上（美术原始宽度 80，占格是 128 的整数倍，直接拉伸会变形）。
+ * 用于怪物图 / 玩家图叠在占格之上（美术原始宽度 80，占格是 `cellSize` 的整数倍，直接拉伸会变形）。
  * @returns 适配后的实际尺寸；**受击闪白的模板必须用这个尺寸**，用占格尺寸会和怪物轮廓错位
  */
 export function applyContainFit(

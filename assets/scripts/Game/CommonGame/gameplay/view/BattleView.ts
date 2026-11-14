@@ -830,11 +830,11 @@ export class BattleView extends Component {
     /**
      * **网格兜底**路径（v1.10 原始实现）：`Graphics` 画深色底 + 与格子对齐的网格线。
      *
-     * 为什么网格能保证无缝：网格线间距 = `cellSize`，周期 `backgroundGridPatternHeight` = 768 = 6 格
+     * 为什么网格能保证无缝：网格线间距 = `cellSize`，周期 `backgroundGridPatternHeight` = 720 = 9 格
      * → 图案以 H 为周期是**构造保证**的，回绕前后逐像素相同（见 core/ScrollWorld.ts 的不变量 ③）。
      *
      * 块数：块 k 的底边 = `m_BackgroundBottomY - offset + k × H`，块数由 `backgroundTileCount()`
-     * 按「可视高度 + 一个周期」推出（本配置 = **3 块**），不是凭手感取 2：H(768) < 可视高(1408) 时
+     * 按「可视高度 + 一个周期」推出（本配置 = **3 块**），不是凭手感取 2：H(720) < 可视高(1408) 时
      * 两块盖不满，会出现空隙。
      */
     private createGridBackground(): void {
@@ -2064,7 +2064,7 @@ export class BattleView extends Component {
      * 见策划案附录 K-3），在 `stepDrop()` 里它**叠加**在滚动位移之上。
      *
      * 结算只有**一条**路径：`stepDrop()` 返回 `Collected` = **进入玩家吸收范围**（磁吸只负责把它送进来），
-     * → 一律走既有的 `collectDrop()`；`Fell`（越过屏幕底边再往下 `dropDespawnBelowScreen` = 30 px）**只销毁节点、绝不结算**（§11.3）。
+     * → 一律走既有的 `collectDrop()`；`Fell`（越过屏幕底边再往下 `dropDespawnBelowScreen` = 19 px）**只销毁节点、绝不结算**（§11.3）。
      *
      * **磁吸方向不受限**（`dropNeverMovesUp`）：位移算完后单调夹取（本帧 y 不得大于进入时的 y）→ 玩家在掉落物上方时磁吸只能横向靠拢。
      */
