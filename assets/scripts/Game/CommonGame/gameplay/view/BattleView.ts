@@ -102,6 +102,7 @@ import {
     setScale,
 } from './GameArt';
 import { HitFeedback } from './HitFeedback';
+import { DamageKind, DamageTextFx } from './DamageTextFx';
 import { ChainLightningFx } from './ChainLightningFx';
 import { EnemyStatusFx } from './EnemyStatusFx';
 import { pickNearestChainTargets } from '../core/ChainLightning';
@@ -135,13 +136,23 @@ const AIM_GUIDE_OUTLINE = new Color(255, 255, 255, 255);
 type DashSegment = ReturnType<typeof buildDashSegments>[number];
 /** 浮标贴屏幕边缘时保留的余量 px（≈半个浮标高度）：保证浮标整体不出屏、随时可见 */
 const CURSOR_FLOAT_EDGE_MARGIN = 48;
-/** 伤害飘字颜色：敌人·普通 / 敌人·暴击 / 玩家·普通 / 玩家·暴击 */
-const DMG_ENEMY = new Color(255, 232, 120, 255);
-const DMG_ENEMY_CRIT = new Color(255, 120, 40, 255);
-const DMG_PLAYER = new Color(255, 92, 92, 255);
-const DMG_PLAYER_CRIT = new Color(255, 60, 200, 255);
-/** 飘字描边色（需求：描边 + 加粗） */
-const DMG_OUTLINE = new Color(20, 12, 0, 255);
+/**
+ * 各伤害类型的**打击感权重**（顿帧时长 / 震屏幅度，基准值见 GameTuning）：
+ *   · 0 = 完全不触发 —— 灼烧是每 0.5 s 一次的 DoT，顿帧 / 震屏会让画面一直卡顿；
+ *   · 闪电链**不顿帧**：它本来就是一串快速跳伤，每跳都停会让闪电变成慢动作
+ *     （与"闪电要比现在快很多"的既有需求冲突），只给一点很轻的震屏；
+ *   · 玩家受击不走这张表（onPlayerDamaged 用独立的 hitStopPlayer / screenShakePlayer*）。
+ * 飘字本身的类型差异（颜色 / 字号 / 位置）在 view/DamageTextFx.ts。
+ */
+const DAMAGE_IMPACT: Record<DamageKind, { hitStop: number; shake: number }> = {
+    [DamageKind.Bullet]: { hitStop: 1, shake: 1 },
+    [DamageKind.Lightning]: { hitStop: 1, shake: 1.2 },
+    [DamageKind.Chain]: { hitStop: 0, shake: 0.35 },
+    [DamageKind.Fire]: { hitStop: 1, shake: 1.1 },
+    [DamageKind.Burn]: { hitStop: 0, shake: 0 },
+    [DamageKind.Ice]: { hitStop: 1, shake: 1.1 },
+    [DamageKind.Player]: { hitStop: 0, shake: 0 },
+};
 
 /**
  * 四种子弹的贴图与显示尺寸（相对 `cellSize` 的倍率）。
@@ -283,6 +294,8 @@ export class BattleView extends Component {
     private m_BackgroundTileAnchorY: number = 0.5;
     /** 一块背景在**节点本地单位**里的高度（= `m_GameBg.contentSize.height`，淡入淡出条带按它布局） */
     private m_BackgroundTileLocalHeight: number = 0;
+    /** 一块背景的**基准 x**（= `m_GameBg` 原位置的 x）：震屏时以它为基准加偏移，避免逐帧累加 */
+    private m_BackgroundTileBaseX: number = 0;
     /** 一块背景在**面板空间**里的显示高度（= 本地高度 × |scale|；把底边换算成 position 用） */
     private m_BackgroundTileDisplayHeight: number = 0;
     /** 相邻块的底边间距（面板空间单位）——**自动时就等于显示高度**，块与块正好接上 */
@@ -312,8 +325,19 @@ export class BattleView extends Component {
     private m_ScrollY: number = 0;
     /** 瞄准浮标外围圆半径 = 玩家图显示半径 + cursorOrbitGap（开局创建玩家时算出） */
     private m_OrbitRadius = 0;
-    /** 伤害飘字（需求：敌人/玩家、普通/暴击颜色不同） */
-    private m_DamageTexts: { node: Node; x0: number; y0: number; life: number }[] = [];
+    /** 伤害飘字（按伤害类型区分颜色 / 字号 / 位置，见 view/DamageTextFx.ts） */
+    private m_DamageFx: DamageTextFx = null;
+
+    // ─────────── 打击反馈（顿帧 / 震屏） ───────────
+    /** 顿帧剩余时间（s）：> 0 时整个玩法推进冻结，只保留表现层（震屏 / 飘字）继续播 */
+    private m_HitStop: number = 0;
+    /** 震屏剩余时间 / 本次总时长 / 本次幅度倍率（同帧多次命中取最大值，不叠加） */
+    private m_ScreenShakeTime: number = 0;
+    private m_ScreenShakeDuration: number = 0;
+    private m_ScreenShakeMul: number = 1;
+    /** 当前震屏偏移（场空间 px）：直接写进本节点位置；真实美术背景块不在本节点子树里，单独补同样偏移 */
+    private m_ScreenShakeX: number = 0;
+    private m_ScreenShakeY: number = 0;
 
     private m_PlayerX: number = 0;
     private m_PlayerY: number = 0;
@@ -429,6 +453,11 @@ export class BattleView extends Component {
         this.m_Overlay = null;
         this.m_EnemyFeedback.clear();
         this.m_PlayerFeedback = null;
+        // 飘字是 Field 下的动态节点，会随本节点一起销毁；这里只断开引用（避免持有失效节点）
+        this.m_DamageFx?.clear();
+        this.m_DamageFx = null;
+        this.m_HitStop = 0;
+        this.m_ScreenShakeTime = 0;
         // 灼烧 / 冰冻覆盖是敌人根节点的子节点，会随敌人一起销毁；这里只清表
         this.m_EnemyStatus.clear();
         // 三种特殊弹的 CD 状态：本局结束即作废（下一局从 createRunStats 的 0 级重来）
@@ -494,6 +523,7 @@ export class BattleView extends Component {
         this.m_BackgroundSourceWidget = null;
         this.m_BackgroundSourceWidth = 0;
         this.m_BackgroundSourceHeight = 0;
+        this.m_BackgroundTileBaseX = 0;
     }
 
     /** 外部暂停（面板打开暂停菜单时调用） */
@@ -532,6 +562,8 @@ export class BattleView extends Component {
         this.createPlayerAndCursor();
         this.createHud();
         this.createWorlds();
+        // 飘字与玩法共用同一条随机序列 → 同种子的飘字散落位置也可复现
+        this.m_DamageFx = new DamageTextFx(this.m_FieldRoot, this.m_Rng);
 
         input.on(Input.EventType.TOUCH_START, this.onTouchStart, this);
         input.on(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
@@ -613,6 +645,8 @@ export class BattleView extends Component {
         this.m_BackgroundSourceWidth = transform.width;
         this.m_BackgroundSourceHeight = transform.height;
         this.m_BackgroundSourcePos = node.position.clone();
+        // 震屏以这个 x 为基准（所有块与第 0 块同 x；不能逐帧读 tile.position.x，否则会累加偏移）
+        this.m_BackgroundTileBaseX = node.position.x;
         this.m_BackgroundSourceWidget = node.getComponent(Widget);
         this.m_BackgroundSourceWidgetEnabled = this.m_BackgroundSourceWidget
             ? this.m_BackgroundSourceWidget.enabled
@@ -1036,9 +1070,32 @@ export class BattleView extends Component {
     // ─────────── 主循环 ───────────
 
     update(dt: number): void {
-        if (this.isPaused() || this.m_Finished) return;
-        // 后台切回来会有长帧，夹一下避免一帧穿模 / 一波敌人瞬移到底
+        if (this.isPaused() || this.m_Finished) {
+            // 暂停 / 结束时把震屏偏移收回原点：否则弹窗会跟着停在偏了几像素的位置上
+            this.resetScreenShake();
+            this.m_HitStop = 0;
+            return;
+        }
+        // 后台切回来会有长帧，夹一下避免一帧穿模 / 一波敌人瞬移到底。
+        // 反馈层（顿帧计时 / 震屏 / 飘字）也用这个夹过的"真实 dt"推进。
         const d = Math.min(Math.max(dt, 0), 0.05);
+
+        // 震屏放在最前面：顿帧期间画面也要继续抖（"停住"的是玩法推进，不是反馈表现）
+        this.updateScreenShake(d);
+
+        // 顿帧：命中瞬间整个玩法推进停住。
+        // 只保留**表现层**继续播（震屏 / 飘字），敌人 / 子弹 / 波次 / 状态计时全部冻结；
+        // 真实美术背景块不在本节点子树里，震屏偏移要手动重摆一次，否则背景会和画面脱开。
+        if (this.m_HitStop > 0) {
+            this.m_HitStop = Math.max(0, this.m_HitStop - d);
+            this.updateBackground();
+            // 顿帧期间世界不动，但**受击表现本身要接着播**：闪白淡出、敌人抖动 / 形变回弹、
+            // 飘字弹出都发生在这短短的 0.1 s 里，冻结它们会让"打击感"延迟到顿帧之后才出现。
+            this.updateHitFeedbackOnly(d);
+            this.m_DamageFx?.update(d);
+            return;
+        }
+
         this.m_Elapsed += d;
 
         this.updateFiring(d);
@@ -1058,7 +1115,8 @@ export class BattleView extends Component {
         // 瞄准（兜底自动瞄准 + 浮标贴外围圆 + 辅助射线）放在敌人之后：
         // 用的是本帧最新的敌人位置，射线与真实弹道才对得上
         this.updateAim(d);
-        this.m_PlayerFeedback?.update(d, this.m_PlayerX, this.m_PlayerY);
+        // 玩家不震、不缩放（基准缩放 = 1；受击形变由 HitFeedback 临时叠上去）
+        this.m_PlayerFeedback?.update(d, this.m_PlayerX, this.m_PlayerY, 1);
         // 子弹：普通弹 + 三种特殊弹都在这里仿真；命中在这里派发（闪电链也就此触发），
         // 伤害结算复用敌人死亡 / 掉落那条唯一路径
         this.updateBullets(d);
@@ -1070,12 +1128,93 @@ export class BattleView extends Component {
         this.updateChainLightningFx(d);
         this.updateWaveFlow(d);
         this.updateHud(false);
-        this.updateDamageTexts(d);
+        this.m_DamageFx?.update(d);
         this.keepPlayerOnTop();
     }
 
     private isPaused(): boolean {
         return this.m_OverlayPaused || this.m_ExternalPaused;
+    }
+
+    // ─────────── 打击反馈：顿帧 / 震屏 ───────────
+
+    /**
+     * 触发顿帧（命中瞬间停住整个世界）。
+     * **取最大值、不累加**：一帧里 5 发子弹同时命中，也只会停一次最长的那一下；
+     * 否则多段伤害会把画面顿成幻灯片。上限是 `hitStopMax`。
+     */
+    private triggerHitStop(seconds: number): void {
+        if (!(seconds > 0)) return;
+        const capped = Math.min(seconds, GameTuning.hitStopMax);
+        this.m_HitStop = Math.max(this.m_HitStop, capped);
+    }
+
+    /**
+     * 触发震屏（整个画面一起抖）。
+     * 幅度取本次更强的那个、时长取更长的那个 —— 同样不叠加。
+     * @param mul 幅度倍率（暴击 / 玩家受击更大）
+     * @param time 持续时间（s，缺省 = 普通命中时长）
+     */
+    private triggerScreenShake(mul: number = 1, time: number = GameTuning.screenShakeTime): void {
+        const duration = Math.max(0.01, time);
+        this.m_ScreenShakeMul = this.m_ScreenShakeTime > 0 ? Math.max(this.m_ScreenShakeMul, mul) : mul;
+        if (duration >= this.m_ScreenShakeTime) this.m_ScreenShakeDuration = duration;
+        this.m_ScreenShakeTime = Math.max(this.m_ScreenShakeTime, duration);
+    }
+
+    /**
+     * 每帧推进震屏：随机方向抖动，幅度按剩余时间**平方**衰减（起手最猛、收尾迅速安静）。
+     *
+     * 偏移直接写在本节点位置（Field + Hud 都在它下面 → 敌人 / 子弹 / 飘字 / 瞄准射线一起抖）；
+     * 真实美术路径的背景块是面板的子节点，不在本节点子树里，由 `updateBackground()` 补同样的偏移。
+     */
+    private updateScreenShake(d: number): void {
+        if (!this.node || !this.node.isValid) return;
+        // 没在震且已归零：不写节点位置（避免每帧无意义地重置 transform）
+        if (this.m_ScreenShakeTime <= 0 && this.m_ScreenShakeX === 0 && this.m_ScreenShakeY === 0) return;
+
+        if (this.m_ScreenShakeTime > 0) {
+            this.m_ScreenShakeTime = Math.max(0, this.m_ScreenShakeTime - d);
+            if (this.m_ScreenShakeTime > 0) {
+                const ratio = this.m_ScreenShakeTime / Math.max(1e-4, this.m_ScreenShakeDuration);
+                const amp = GameTuning.screenShakeAmplitude * this.m_ScreenShakeMul * ratio * ratio;
+                this.m_ScreenShakeX = (Math.random() * 2 - 1) * amp;
+                this.m_ScreenShakeY = (Math.random() * 2 - 1) * amp;
+            } else {
+                this.m_ScreenShakeX = 0;
+                this.m_ScreenShakeY = 0;
+                this.m_ScreenShakeMul = 1;
+            }
+        }
+
+        setPos(this.node, this.m_ScreenShakeX, this.m_ScreenShakeY);
+    }
+
+    /** 立刻停止震屏并把画面位移归零（暂停 / 结束时用，避免弹窗停在偏移位置上） */
+    private resetScreenShake(): void {
+        this.m_ScreenShakeTime = 0;
+        this.m_ScreenShakeDuration = 0;
+        this.m_ScreenShakeMul = 1;
+        this.m_ScreenShakeX = 0;
+        this.m_ScreenShakeY = 0;
+        if (this.node && this.node.isValid) setPos(this.node, 0, 0);
+    }
+
+    /**
+     * 只推进受击表现（闪白 / 抖动 / 形变），**不动任何玩法状态**。
+     *
+     * 顿帧期间专用：敌人位置与基准缩放已经冻结，直接用 `enemy.x / enemy.y / enemyVisualScale`
+     * 作为基准即可（它们在本帧内不会再变），表现层于是能在这 0.1 s 里照常播完。
+     */
+    private updateHitFeedbackOnly(d: number): void {
+        for (let i = 0; i < this.m_Enemies.length; i++) {
+            const enemy = this.m_Enemies[i];
+            const node = this.m_EnemyNodes.get(enemy.id);
+            if (!node || !node.isValid) continue;
+            const feedback = this.m_EnemyFeedback.get(enemy.id);
+            if (feedback) feedback.update(d, enemy.x, enemy.y, enemyVisualScale(enemy));
+        }
+        this.m_PlayerFeedback?.update(d, this.m_PlayerX, this.m_PlayerY, 1);
     }
 
     /**
@@ -1587,12 +1726,22 @@ export class BattleView extends Component {
         if (this.m_BackgroundUsesNode) {
             const spacing = this.m_BackgroundTileSpacing;
             const offset = wrapBackgroundOffset(this.m_ScrollY * this.backgroundSpaceScaleNow(), spacing);
+            // 震屏：背景块挂在**面板**上（不是本节点的子节点），要单独补一份同样的视觉偏移。
+            // 场空间 → 面板空间乘 backgroundSpaceScale，和滚动量的换算口径完全一致。
+            const shakeScale = this.backgroundSpaceScaleNow();
+            const shakeX = this.m_ScreenShakeX * shakeScale;
+            const shakeY = this.m_ScreenShakeY * shakeScale;
             for (let i = 0; i < this.m_BackgroundTiles.length; i++) {
                 const tile = this.m_BackgroundTiles[i];
                 if (!tile || !tile.isValid) continue;
                 const bottom = backgroundTileBottomY(this.m_BackgroundBottomY, offset, spacing, i);
-                // 底边 → 节点 position：锚点默认 0.5，所以 + 半个**显示**高度
-                setPos(tile, tile.position.x, bottom + this.m_BackgroundTileAnchorY * this.m_BackgroundTileDisplayHeight);
+                // 底边 → 节点 position：锚点默认 0.5，所以 + 半个**显示**高度。
+                // x 用开局记下的基准（不能读 tile.position.x：那会把上一帧的震屏偏移累加进去）
+                setPos(
+                    tile,
+                    this.m_BackgroundTileBaseX + shakeX,
+                    bottom + this.m_BackgroundTileAnchorY * this.m_BackgroundTileDisplayHeight + shakeY
+                );
             }
             return;
         }
@@ -1620,11 +1769,12 @@ export class BattleView extends Component {
 
             const node = this.m_EnemyNodes.get(enemy.id);
             if (node && node.isValid) {
+                const baseScale = enemyVisualScale(enemy);
                 setPos(node, enemy.x, enemy.y);
-                setScale(node, enemyVisualScale(enemy));
-                // 震动改的是节点位置，所以必须在本帧基准位置定好之后再更新
+                setScale(node, baseScale);
+                // 震动改的是节点位置、形变改的是节点缩放，所以必须在本帧基准位置 / 基准缩放定好之后再更新
                 const feedback = this.m_EnemyFeedback.get(enemy.id);
-                if (feedback) feedback.update(d, enemy.x, enemy.y);
+                if (feedback) feedback.update(d, enemy.x, enemy.y, baseScale);
                 // 灼烧 / 冰冻覆盖：显隐完全由 enemy.status 决定（不另记计时），
                 // 所以刷新 / 提前清除（死亡）都会自动反映到画面上
                 const statusFx = this.m_EnemyStatus.get(enemy.id);
@@ -1674,7 +1824,7 @@ export class BattleView extends Component {
 
             const result = stepStatus(enemy, d);
             if (result.burnTicks > 0 && enemy.status) {
-                this.damageEnemy(enemy, result.burnTicks * enemy.status.burnDamage, false);
+                this.damageEnemy(enemy, result.burnTicks * enemy.status.burnDamage, false, DamageKind.Burn);
             }
         }
     }
@@ -1690,13 +1840,13 @@ export class BattleView extends Component {
         switch (bullet.kind ?? BulletKind.Magazine) {
             case BulletKind.Lightning: {
                 const spec = lightningSpec(this.m_Stats.lightningLevel);
-                this.damageEnemy(enemy, spec.bulletDamage, true);
+                this.damageEnemy(enemy, spec.bulletDamage, true, DamageKind.Lightning);
                 this.triggerChainLightning(enemy, spec);
                 return;
             }
             case BulletKind.Fire: {
                 const spec = fireballSpec(this.m_Stats.fireballLevel);
-                this.damageEnemy(enemy, spec.bulletDamage, true);
+                this.damageEnemy(enemy, spec.bulletDamage, true, DamageKind.Fire);
                 // 先结算本体伤害、再挂灼烧：这一下如果直接打死了，挂状态也无害
                 // （伤害入口已判死亡，stepStatus 会跳过已死敌人，killEnemy 也会清掉状态）
                 applyBurn(enemy, spec.burnDuration, spec.burnDamage, spec.burnInterval);
@@ -1704,35 +1854,53 @@ export class BattleView extends Component {
             }
             case BulletKind.Ice: {
                 const spec = iceSpec(this.m_Stats.iceLevel);
-                this.damageEnemy(enemy, spec.bulletDamage, true);
+                this.damageEnemy(enemy, spec.bulletDamage, true, DamageKind.Ice);
                 applyFreeze(enemy, spec.freezeDuration);
                 return;
             }
             case BulletKind.Magazine:
             default:
-                this.damageEnemy(enemy, this.m_Stats.bulletDamage, true);
+                this.damageEnemy(enemy, this.m_Stats.bulletDamage, true, DamageKind.Bullet);
                 return;
         }
     }
 
     /**
-     * **唯一的敌人受伤结算路径**（子弹与闪电链共用）
+     * **唯一的敌人受伤结算路径**（子弹 / 闪电链 / 灼烧共用）
      *
-     * 抽出来是为了让闪电链不必复制"暴击 → 飘字 → 受击表现 → 死亡 → 掉落"这一串：
-     * 两条伤害来源只要走同一个入口，掉落 / 计数 / 表现就绝不会出现两套口径。
+     * 抽出来是为了让所有伤害来源都不必复制"暴击 → 飘字 → 受击表现 → 顿帧 / 震屏 → 死亡 → 掉落"：
+     * 只要走同一个入口，掉落 / 计数 / 表现就绝不会出现两套口径。
      * @param base 基础伤害（暴击前的值）
-     * @param canCrit 是否吃暴击（子弹吃；将来若有无视暴击的伤害来源，传 false）
+     * @param canCrit 是否吃暴击（子弹吃；灼烧跳伤不吃）
+     * @param kind 伤害类型：同时决定**飘字样式**（颜色 / 字号 / 位置）与**打击感强弱**
+     *             （`DAMAGE_IMPACT`：DoT 不顿帧，闪电链只震屏不顿帧）
      */
-    private damageEnemy(enemy: EnemyRuntime, base: number, canCrit: boolean): void {
+    private damageEnemy(
+        enemy: EnemyRuntime,
+        base: number,
+        canCrit: boolean,
+        kind: DamageKind = DamageKind.Bullet
+    ): void {
         if (!isHittable(enemy) || enemy.hp <= 0) return;
-        // 暴击判定：读玩家属性（可被天赋/词条提升）；普通/暴击飘字颜色不同
+        // 暴击判定：读玩家属性（可被天赋/词条提升）
         const crit = canCrit && this.m_Rng.next() < this.m_Stats.critChance;
         const dmg = Math.max(1, Math.round(base * (crit ? this.m_Stats.critMul : 1)));
         enemy.hp -= dmg;
-        this.spawnDamageText(enemy.x, enemy.y, dmg, crit, false);
+        // 飘字：颜色 / 字号 / 位置按伤害类型区分（暴击再放大并带 "!"）
+        this.m_DamageFx?.spawn(enemy.x, enemy.y, dmg, kind, crit);
 
-        // 命中即闪白 + 震动（致死那一下也闪，观感上"打中了"更明确）
-        this.m_EnemyFeedback.get(enemy.id)?.trigger();
+        // 命中即闪白 + 震动 + 形变（致死那一下也闪，观感上"打中了"更明确）
+        this.m_EnemyFeedback.get(enemy.id)?.trigger(crit ? GameTuning.hitSquashCritMul : 1);
+
+        // 顿帧 / 震屏：按伤害类型权重触发，同帧多次命中由 trigger 内部取最大值（不叠加）
+        const impact = DAMAGE_IMPACT[kind] || DAMAGE_IMPACT[DamageKind.Bullet];
+        if (impact.hitStop > 0) {
+            this.triggerHitStop(GameTuning.hitStopTime * impact.hitStop * (crit ? GameTuning.hitStopCritMul : 1));
+        }
+        if (impact.shake > 0) {
+            this.triggerScreenShake(impact.shake * (crit ? GameTuning.screenShakeCritMul : 1));
+        }
+
         if (enemy.hp > 0) return;
 
         killEnemy(enemy);
@@ -1787,62 +1955,13 @@ export class BattleView extends Component {
             const reached = Math.min(bolt.targets.length, bolt.fx.reachedTargets);
             for (; bolt.applied < reached; bolt.applied++) {
                 // 目标可能已被别的伤害打死（伤害入口自己会判掉），这里照常调用即可
-                this.damageEnemy(bolt.targets[bolt.applied], bolt.spec.chainDamage, true);
+                this.damageEnemy(bolt.targets[bolt.applied], bolt.spec.chainDamage, true, DamageKind.Chain);
             }
 
             if (bolt.fx.finished) {
                 bolt.fx.destroy();
                 this.m_ChainBolts.splice(i, 1);
             }
-        }
-    }
-
-    /** 飘伤害数字：敌人（普通/暴击）与玩家（普通/暴击）四种颜色（需求） */
-    private spawnDamageText(x: number, y: number, value: number, crit: boolean, isPlayer: boolean): void {
-        const color = isPlayer ? (crit ? DMG_PLAYER_CRIT : DMG_PLAYER) : (crit ? DMG_ENEMY_CRIT : DMG_ENEMY);
-        const size = Math.round(GameTuning.cellSize * (crit ? 0.34 : 0.26));
-        const label = createLabel(this.m_FieldRoot, `Dmg_${value}`, crit ? `${value}!` : `${value}`, size, color);
-        // 描边 + 加粗（需求 6）
-        label.isBold = true;
-        label.enableOutline = true;
-        label.outlineColor = DMG_OUTLINE;
-        label.outlineWidth = GameTuning.damageTextOutline;
-        // 出生点：圆形内均匀随机（√u × 半径），避免连击时数字叠在同一位置（需求）
-        const sc = GameTuning.damageTextScatter;
-        const an = this.m_Rng.next() * Math.PI * 2;
-        const rd = Math.sqrt(this.m_Rng.next()) * sc;
-        const px = x + Math.cos(an) * rd;
-        const py = y + Math.sin(an) * rd;
-        setPos(label.node, px, py);
-        // 从 0 放大（需求 6）
-        label.node.setScale(0, 0, 1);
-        this.m_DamageTexts.push({ node: label.node, x0: px, y0: py, life: GameTuning.damageTextLife });
-    }
-
-    /** 伤害飘字：上浮 + 缩小 + 到期销毁 */
-    private updateDamageTexts(d: number): void {
-        if (this.m_DamageTexts.length === 0) return;
-        for (let i = this.m_DamageTexts.length - 1; i >= 0; i--) {
-            const t = this.m_DamageTexts[i];
-            t.life -= d;
-            if (t.life <= 0 || !t.node.isValid) {
-                if (t.node.isValid) t.node.destroy();
-                this.m_DamageTexts.splice(i, 1);
-                continue;
-            }
-            const life = GameTuning.damageTextLife;
-            const passed = life - t.life;
-            const pop = GameTuning.damageTextPop;
-            const peak = GameTuning.damageTextPopScale;
-            // ① 弹出：0 → peak　② 回稳：peak → 1　③ 尾段缩到 0.85
-            let sc: number;
-            if (passed < pop) sc = peak * (passed / pop);
-            else if (passed < pop * 2) sc = peak - (peak - 1) * ((passed - pop) / pop);
-            else sc = 1 - 0.15 * ((passed - pop * 2) / Math.max(1e-4, life - pop * 2));
-            t.node.setScale(sc, sc, 1);
-            // 向上飘：缓出（先快后慢）
-            const rk = 1 - (1 - passed / life) * (1 - passed / life);
-            t.node.setPosition(t.x0, t.y0 + GameTuning.damageTextRise * rk, 0);
         }
     }
 
@@ -2116,12 +2235,17 @@ export class BattleView extends Component {
 
     private onPlayerDamaged(damage: number): void {
         if (this.m_Finished) return;
-        this.m_PlayerFeedback?.trigger();
         // 敌人攻击也会暴击（需求：不同伤害类型不同颜色）
         const pCrit = this.m_Rng.next() < this.m_Stats.critChance;
         const pDmg = pCrit ? Math.max(1, Math.round(damage * this.m_Stats.critMul)) : damage;
         const dead = damagePlayer(this.m_Stats, pDmg);
-        this.spawnDamageText(this.m_PlayerX, this.m_PlayerY, pDmg, pCrit, true);
+
+        // 玩家受击：闪白 + 形变 + 更重的顿帧 / 震屏（红色飘字固定飘在玩家上方）
+        this.m_PlayerFeedback?.trigger(pCrit ? GameTuning.hitSquashCritMul : 1);
+        this.m_DamageFx?.spawn(this.m_PlayerX, this.m_PlayerY, pDmg, DamageKind.Player, pCrit);
+        this.triggerHitStop(GameTuning.hitStopPlayer);
+        this.triggerScreenShake(GameTuning.screenShakePlayerMul, GameTuning.screenShakePlayerTime);
+
         if (dead) this.finishGameOver();
     }
 

@@ -1,5 +1,5 @@
 /**
- * 打击反馈：受击闪白（敌人与玩家）+ 敌人轻微震动
+ * 打击反馈：受击闪白（敌人与玩家）+ 敌人轻微震动 + 受击形变（压扁回弹）
  *
  * 闪白为什么用 Mask 模板裁切，而不是直接画一个白色圆角块：
  * 白块只能画"占格矩形"，而占格 ≠ 美术轮廓 —— 贴图四周有透明留白，
@@ -12,10 +12,13 @@
  *    敌人必须传**根节点**（底图与怪物图都是它的子节点）—— 曾经把闪白 / 震动挂在怪物图精灵上，
  *    抖动只动怪物图、品质底图钉在原地，看起来像"怪物图在底图里滑动"；
  * ② 震动由本类直接改 target 的位置，所以调用方每帧要传一次"基准位置"（未震动时的位置）。
+ * ③ 形变同样直接改 target 的缩放，**基准缩放必须由调用方每帧传入** ——
+ *    敌人的基准缩放来自生成动画 / 体型（`enemyVisualScale`），本类不能自己缓存一份，
+ *    否则出生放大动画期间命中会把它弹回旧值（见 update 的 baseScale 参数）。
  */
 import { Color, Node, SpriteFrame } from 'cc';
 import { GameTuning } from '../core/GameTuning';
-import { setPos } from './GameArt';
+import { setPos, setScaleXY } from './GameArt';
 import { StencilQuad, createStencilQuad, hideStencilQuad, showStencilQuad } from './StencilQuad';
 
 /** 闪白色（受击那一瞬间的纯白，只在贴图轮廓内出现） */
@@ -29,6 +32,9 @@ export class HitFeedback {
     private m_ShakeTime: number = 0;
     private m_Shaking: boolean = false;
     private m_ShakeEnabled: boolean = false;
+    /** 形变剩余时间与本次强度倍率（暴击更大） */
+    private m_SquashTime: number = 0;
+    private m_SquashStrength: number = 1;
 
     private constructor(target: Node) {
         this.m_Target = target;
@@ -64,8 +70,11 @@ export class HitFeedback {
         );
     }
 
-    /** 受击：触发闪白（敌人顺带触发震动） */
-    trigger(): void {
+    /**
+     * 受击：触发闪白 + 形变（敌人顺带触发震动）
+     * @param strength 本次打击的强度倍率（暴击传 `hitSquashCritMul`，普通传 1）
+     */
+    trigger(strength: number = 1): void {
         if (!this.m_Target || !this.m_Target.isValid) return;
 
         this.m_FlashTime = GameTuning.hitFlashTime;
@@ -75,13 +84,20 @@ export class HitFeedback {
             this.m_ShakeTime = GameTuning.hitShakeTime;
             this.m_Shaking = true;
         }
+
+        if (GameTuning.hitSquashTime > 0) {
+            this.m_SquashTime = GameTuning.hitSquashTime;
+            this.m_SquashStrength = Number.isFinite(strength) && strength > 0 ? strength : 1;
+        }
     }
 
     /**
-     * 每帧更新，必须在目标节点本帧的基准位置确定之后调用
+     * 每帧更新，必须在目标节点本帧的基准位置 / 基准缩放确定之后调用
      * @param baseX/baseY 未震动时的位置
+     * @param baseScale 未形变时的缩放（敌人 = `enemyVisualScale()`，玩家 = 1）；
+     *                  形变期间本类输出的就是它乘上"压扁系数"
      */
-    update(dt: number, baseX: number, baseY: number): void {
+    update(dt: number, baseX: number, baseY: number, baseScale: number = 1): void {
         if (!this.m_Target || !this.m_Target.isValid) return;
         const d = Math.max(0, dt);
 
@@ -111,6 +127,23 @@ export class HitFeedback {
             } else {
                 this.m_Shaking = false;
                 setPos(this.m_Target, baseX, baseY);
+            }
+        }
+
+        // 形变：命中瞬间沿横向压扁、纵向压缩，再用阻尼余弦来回弹（果冻感）。
+        // 缩放 = baseScale × (1 ± k)，k 从 +amount 衰减振荡到 0；不会改变节点的基准缩放，
+        // 因为 baseScale 是调用方本帧算好的（出生动画 / 体型缩放都还在生效）。
+        if (this.m_SquashTime > 0) {
+            const total = GameTuning.hitSquashTime;
+            this.m_SquashTime = Math.max(0, this.m_SquashTime - d);
+            if (this.m_SquashTime > 0 && total > 0) {
+                // p：0 → 1；decay 让振幅收尾连续归零，cos 让"压扁 / 回弹"交替
+                const p = 1 - this.m_SquashTime / total;
+                const k = GameTuning.hitSquashAmount * this.m_SquashStrength * (1 - p) * Math.cos(p * Math.PI * 2);
+                setScaleXY(this.m_Target, baseScale * (1 + k), baseScale * (1 - k * 0.85));
+            } else {
+                // 归位那一帧也要显式写一次：不写就会停在最后一次形变的缩放上
+                setScaleXY(this.m_Target, baseScale, baseScale);
             }
         }
     }

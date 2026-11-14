@@ -337,6 +337,12 @@ export function setScale(node: Node, scale: number): void {
     node.setScale(new Vec3(scale, scale, 1));
 }
 
+/** 设置节点非等比缩放（受击形变的"压扁 / 回弹"用；z 恒为 1） */
+export function setScaleXY(node: Node, x: number, y: number): void {
+    if (!node || !node.isValid) return;
+    node.setScale(new Vec3(x, y, 1));
+}
+
 /** 按占格设置节点尺寸（= cols × cellSize, rows × cellSize），敌人根节点用 */
 export function applyCellSize(node: Node, cols: number, rows: number): void {
     if (!node || !node.isValid) return;

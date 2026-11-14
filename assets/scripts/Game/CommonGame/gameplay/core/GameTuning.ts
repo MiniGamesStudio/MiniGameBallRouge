@@ -418,6 +418,8 @@ export const GameTuning = {
     damageTextPop: 0.15,
     damageTextPopScale: 1.3,
     damageTextOutline: 2.5,
+    /** 暴击飘字的字号倍率（叠加在各伤害类型自己的基准字号上） */
+    damageTextCritScale: 1.35,
     /** 飘字出生点：圆形内随机半径 px（避免多个数字叠在同一位置） */
     damageTextScatter: 32,
     /** 敌人品质底图九宫格切边 px：底图 128×128 的多层描边 + 圆角都在这 16px 之内 */
@@ -427,7 +429,45 @@ export const GameTuning = {
     dropExpMaxScale: 1.8,
     dropSoulScalePerValue: 0.25,
     dropSoulMaxScale: 2.0,
-    // ─────────── 打击反馈（受击闪白 / 敌人震动） ───────────
+    // ─────────── 打击反馈（顿帧 / 震屏 / 受击闪白与形变） ───────────
+    //
+    // 三条**互相独立**的表现，同一帧多次命中时各取最大值、绝不累加
+    // （见 BattleView.triggerHitStop / triggerScreenShake）：
+    //   · 顿帧：命中瞬间整个玩法推进停住（震屏与飘字这类表现层继续播）；
+    //   · 震屏：整个画面（背景、敌人、飘字、玩家）一起抖，不是只抖被打的那只怪；
+    //   · 受击闪白 + 形变：目标本身的表现，见 view/HitFeedback.ts。
+    // 伤害类型的强弱权重在 view/BattleView.ts 的 DAMAGE_IMPACT 里（DoT 不顿帧、不震屏）。
+
+    /**
+     * 顿帧：普通命中的全场停顿时长（s）。
+     * ⚠️ **当前暂时关闭（0 = 关闭）**：手感调整期间先不顿帧；
+     * 要恢复时改成 0.1（用户最初的需求值）即可，代码路径完全保留、无需改别处。
+     */
+    hitStopTime: 0,
+    /** 顿帧：暴击的时长倍率（暴击更有分量） */
+    hitStopCritMul: 1.3,
+    /** 顿帧：单次时长上限（s）—— 同帧多次命中取最大值，防止无限叠加 */
+    hitStopMax: 0.14,
+    /** 顿帧：玩家受击的时长（s，独立于伤害类型权重，玩家掉血要更"重"）。⚠️ 同样暂时关闭（0 = 关闭） */
+    hitStopPlayer: 0,
+
+    /** 震屏：普通命中的持续时间（s） */
+    screenShakeTime: 0.18,
+    /** 震屏：普通命中的最大幅度（px，场空间；随时间平方衰减） */
+    screenShakeAmplitude: 9,
+    /** 震屏：暴击的幅度倍率 */
+    screenShakeCritMul: 1.6,
+    /** 震屏：玩家受击的持续时间（s）与幅度倍率 */
+    screenShakePlayerTime: 0.28,
+    screenShakePlayerMul: 1.8,
+
+    /** 受击形变：一次"压扁→回弹"的持续时间（s，阻尼余弦） */
+    hitSquashTime: 0.14,
+    /** 受击形变：最大压扁比例（0.2 = 横轴放大 20%、纵轴压缩约 17%） */
+    hitSquashAmount: 0.2,
+    /** 受击形变：暴击的幅度倍率 */
+    hitSquashCritMul: 1.35,
+
     /** 受击闪白持续时间（s） */
     hitFlashTime: 0.12,
     /** 受击闪白起始不透明度（0~255） */
