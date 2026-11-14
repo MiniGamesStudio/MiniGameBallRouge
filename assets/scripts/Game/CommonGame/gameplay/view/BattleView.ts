@@ -137,7 +137,10 @@ type DashSegment = ReturnType<typeof buildDashSegments>[number];
 /** 浮标贴屏幕边缘时保留的余量 px（≈半个浮标高度）：保证浮标整体不出屏、随时可见 */
 const CURSOR_FLOAT_EDGE_MARGIN = 48;
 /**
- * 各伤害类型的**打击感权重**（顿帧时长 / 震屏幅度，基准值见 GameTuning）：
+ * 各伤害类型的**打击感权重**（顿帧时长 / 震屏幅度，基准值见 GameTuning）。
+ * 注意：震屏默认只在**暴击**时触发（`screenShakeOnlyOnCrit`）—— 这里的 shake 权重
+ * 决定的是"暴击时晃多狠"，普通命中的 shake 权重暂时用不上。
+ *
  *   · 0 = 完全不触发 —— 灼烧是每 0.5 s 一次的 DoT，顿帧 / 震屏会让画面一直卡顿；
  *   · 闪电链**不顿帧**：它本来就是一串快速跳伤，每跳都停会让闪电变成慢动作
  *     （与"闪电要比现在快很多"的既有需求冲突），只给一点很轻的震屏；
@@ -1892,12 +1895,13 @@ export class BattleView extends Component {
         // 命中即闪白 + 震动 + 形变（致死那一下也闪，观感上"打中了"更明确）
         this.m_EnemyFeedback.get(enemy.id)?.trigger(crit ? GameTuning.hitSquashCritMul : 1);
 
-        // 顿帧 / 震屏：按伤害类型权重触发，同帧多次命中由 trigger 内部取最大值（不叠加）
+        // 顿帧 / 震屏：按伤害类型权重触发，同帧多次命中由 trigger 内部取最大值（不叠加）。
+        // 震屏默认**只在暴击时**触发（GameTuning.screenShakeOnlyOnCrit），普通命中不晃屏。
         const impact = DAMAGE_IMPACT[kind] || DAMAGE_IMPACT[DamageKind.Bullet];
         if (impact.hitStop > 0) {
             this.triggerHitStop(GameTuning.hitStopTime * impact.hitStop * (crit ? GameTuning.hitStopCritMul : 1));
         }
-        if (impact.shake > 0) {
+        if (GameTuning.screenShakeEnabled && impact.shake > 0 && (crit || !GameTuning.screenShakeOnlyOnCrit)) {
             this.triggerScreenShake(impact.shake * (crit ? GameTuning.screenShakeCritMul : 1));
         }
 
@@ -2244,7 +2248,9 @@ export class BattleView extends Component {
         this.m_PlayerFeedback?.trigger(pCrit ? GameTuning.hitSquashCritMul : 1);
         this.m_DamageFx?.spawn(this.m_PlayerX, this.m_PlayerY, pDmg, DamageKind.Player, pCrit);
         this.triggerHitStop(GameTuning.hitStopPlayer);
-        this.triggerScreenShake(GameTuning.screenShakePlayerMul, GameTuning.screenShakePlayerTime);
+        if (GameTuning.screenShakeEnabled && (pCrit || !GameTuning.screenShakeOnlyOnCrit)) {
+            this.triggerScreenShake(GameTuning.screenShakePlayerMul, GameTuning.screenShakePlayerTime);
+        }
 
         if (dead) this.finishGameOver();
     }

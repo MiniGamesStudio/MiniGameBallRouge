@@ -451,6 +451,22 @@ export const GameTuning = {
     /** 顿帧：玩家受击的时长（s，独立于伤害类型权重，玩家掉血要更"重"）。⚠️ 同样暂时关闭（0 = 关闭） */
     hitStopPlayer: 0,
 
+    /**
+     * 震屏**总开关**。
+     * ⚠️ **当前暂时关闭（false）**：手感调整期间先不晃屏；要恢复改成 true 即可
+     *（震屏的其他参数与代码路径都保留，`screenShakeOnlyOnCrit` 决定恢复后是否只暴击才震）。
+     */
+    screenShakeEnabled: false,
+    /**
+     * 震屏：是否**只在暴击时**触发。
+     *
+     * true（当前）= 普通命中只闪白 / 抖动 / 形变，不晃屏；暴击才震屏 —— 画面更稳，
+     *   普通连击不会把整个屏幕晃得看不清。
+     * false = 恢复"每次命中都震屏"（v1.16 初版行为）。
+     *
+     * ⚠️ 布尔键 `applyTuningValues()` 不会覆盖（它只认 number），只能改代码默认值。
+     */
+    screenShakeOnlyOnCrit: true,
     /** 震屏：普通命中的持续时间（s） */
     screenShakeTime: 0.18,
     /** 震屏：普通命中的最大幅度（px，场空间；随时间平方衰减） */
