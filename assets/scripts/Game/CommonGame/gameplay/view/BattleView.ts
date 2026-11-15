@@ -322,6 +322,14 @@ export class BattleView extends Component {
      */
     private m_ScrollDelta: number = 0;
     /**
+     * 本帧世界是否暂停（任一敌人 Telegraph / 被冰冻）。
+     *
+     * ⚠️ **出生排期与换波计时必须跟着它一起停**：行距是靠"世界滚了多远"保证的，
+     * 如果世界停住、出生计时却照走，新一波敌人就会在上一行还没让开时生成 → **敌人重叠**。
+     * 见 updateSpawning / updateWaveFlow。
+     */
+    private m_WorldPaused: boolean = false;
+    /**
      * **累计滚动量** px（**场空间**单位）。只在这里累计、且按背景周期回绕：
      * 它同时就是"背景拼接偏移"的来源，长期运行（几小时）也不会出现浮点精度漂移。
      */
@@ -1102,16 +1110,19 @@ export class BattleView extends Component {
         this.m_Elapsed += d;
 
         this.updateFiring(d);
-        this.updateSpawning(d);
         // 持续状态（灼烧 / 冰冻）**必须排在滚动之前**：冻结到期的那一帧就要解冻，
         // 同帧 updateScroll 才能让世界恢复滚动（否则会多停一帧，肉眼可感）。
         // ⚠️ 它按真实时间走、**不受世界暂停影响** —— 冻结自己会把世界停住，
         // 计时若也跟着停就永远解不开（见 core/StatusEffects.ts 顶部说明）。
         this.updateStatuses(d);
         // 单一滚动源：**先**算本帧世界滚动位移（含世界暂停裁决），
-        // **再**让三个消费者分别消费它 —— 顺序即"锁步"的可见形式：
-        // 敌人（updateEnemies）→ 背景（updateBackground）→ 掉落物（updateDrops）
+        // **再**让消费者分别消费它 —— 顺序即"锁步"的可见形式：
+        // 出生排期（updateSpawning，必须排在它之后：暂停时不能继续出怪）
+        // → 敌人（updateEnemies）→ 背景（updateBackground）→ 掉落物（updateDrops）
         this.updateScroll(d);
+        // ⚠️ 出生排期必须在 updateScroll 之后：它要读本帧的 `m_WorldPaused`，
+        // 世界停住时不能继续往下滴新怪（否则新怪会和没让开的上/下一行重叠）。
+        this.updateSpawning(d);
         this.updateEnemies(d);
         this.updateBackground();
         this.updateDrops(d);
@@ -1206,8 +1217,8 @@ export class BattleView extends Component {
     /**
      * 只推进受击表现（闪白 / 抖动 / 形变），**不动任何玩法状态**。
      *
-     * 顿帧期间专用：敌人位置与基准缩放已经冻结，直接用 `enemy.x / enemy.y / enemyVisualScale`
-     * 作为基准即可（它们在本帧内不会再变），表现层于是能在这 0.1 s 里照常播完。
+     * 顿帧期间专用：敌人位置已经冻结；抖动作用于 ArtRoot 的局部空间（基准 0,0），
+     * 形变作用于根节点（基准缩放直接现取 `enemyVisualScale`，本帧不会变）。
      */
     private updateHitFeedbackOnly(d: number): void {
         for (let i = 0; i < this.m_Enemies.length; i++) {
@@ -1215,7 +1226,7 @@ export class BattleView extends Component {
             const node = this.m_EnemyNodes.get(enemy.id);
             if (!node || !node.isValid) continue;
             const feedback = this.m_EnemyFeedback.get(enemy.id);
-            if (feedback) feedback.update(d, enemy.x, enemy.y, enemyVisualScale(enemy));
+            if (feedback) feedback.update(d, 0, 0, enemyVisualScale(enemy));
         }
         this.m_PlayerFeedback?.update(d, this.m_PlayerX, this.m_PlayerY, 1);
     }
@@ -1595,7 +1606,10 @@ export class BattleView extends Component {
     /** 按出生计划生成敌人 */
     private updateSpawning(d: number): void {
         if (this.m_SpawnIndex >= this.m_SpawnEvents.length) return;
-        this.m_SpawnTimer += d;
+        // 世界暂停时**出生计时也停**：行距不变量是"上一行让开 1.2 格"，而让开靠的是世界滚动。
+        // 世界停住却继续计时，新行就会在上一行还没让开时生成 → 敌人重叠
+        //（冰冻结、敌人到底 Telegraph 都会触发全场暂停）。
+        this.m_SpawnTimer += this.m_WorldPaused ? 0 : d;
         while (this.m_SpawnIndex < this.m_SpawnEvents.length) {
             const event = this.m_SpawnEvents[this.m_SpawnIndex];
             if (event.delay > this.m_SpawnTimer) break;
@@ -1628,21 +1642,33 @@ export class BattleView extends Component {
         // ② 怪物图：
         //    一格 / 两格 → **一格一张**（两格怪两格各一张，把占格铺满）
         //    4 / 6 / 8 格 → **一张放大图**铺在占格中间（走 Boss_001-003）
+        //
+        // ⚠️ 怪物图放进独立的 `ArtRoot`：
+        //    · 受击**抖动**只作用在 ArtRoot 上（格内有留白，不会压到邻居）；
+        //    · 受击**形变**作用在根节点、但只允许压缩（见 HitFeedback）；
+        //    · 品质底图铺满整格、本身不位移 —— 否则任何外扩 / 挪动都会压到相邻敌人。
+        //    兄弟序：Base → 闪白(底图) → ArtRoot → 闪白(怪物图)，
+        //    所以底图闪白不会盖住怪物（与改动前的层级完全一致）。
         const monsterFrame = getArt(this.m_Art, paths.monster);
         const perCellArt = enemy.cols * enemy.rows <= 2;
-        // 受击表现挂在**敌人根节点**上：底图与怪物图都是它的子节点，抖动才会一起动
+        // 受击表现挂在**敌人根节点**上：闪白覆盖整格，抖动 / 形变指向 ArtRoot
         const feedback = HitFeedback.attach(node, true);
         // 品质底图也闪白：模板用底图自己的 frame（圆角 + 描边轮廓），铺满整个占格。
         // ⚠️ 必须**先于**怪物图加入 → 层级在底图之上、怪物图之下，
         // 这样底图闪白不会把怪物轮廓盖掉（否则整只怪会变成一块白）。
         feedback.addFlash(tileFrame, boxW, boxH);
 
+        const artRoot = makeNode(node, 'ArtRoot');
+        applyCellSize(artRoot, enemy.cols, enemy.rows);
+        // 抖动只作用在怪物图容器上（整格底图不位移）；形变仍作用于根节点，但只会压缩
+        feedback.setShakeTarget(artRoot);
+
         if (perCellArt) {
             for (let r = 0; r < enemy.rows; r++) {
                 for (let c = 0; c < enemy.cols; c++) {
                     const cx = (c - (enemy.cols - 1) * 0.5) * cell;
                     const cy = ((enemy.rows - 1) * 0.5 - r) * cell;
-                    const art = createSprite(node, `Monster_${r}_${c}`, monsterFrame);
+                    const art = createSprite(artRoot, `Monster_${r}_${c}`, monsterFrame);
                     const fit = applyContainFit(art, monsterFrame, cell, cell, GameTuning.artFitMargin);
                     setPos(art, cx, cy);
                     // 闪白按格偏移：模板尺寸用该格怪物图的实际尺寸（用占格尺寸会与轮廓错位）
@@ -1650,9 +1676,10 @@ export class BattleView extends Component {
                 }
             }
         } else {
-            const art = createSprite(node, 'Monster', monsterFrame);
-            // 一张放大图：contain 到整个占格（margin 给 1，尽量占满且不拉变形）
-            const fit = applyContainFit(art, monsterFrame, boxW, boxH, 1);
+            const art = createSprite(artRoot, 'Monster', monsterFrame);
+            // 一张放大图：contain 到整个占格。⚠️ 也留 `artFitMargin` 的白边 ——
+            // 受击抖动作用在 ArtRoot 上，没有白边就会抖出占格、压到相邻敌人。
+            const fit = applyContainFit(art, monsterFrame, boxW, boxH, GameTuning.artFitMargin);
             feedback.addFlash(monsterFrame, fit ? fit.width : boxW, fit ? fit.height : boxH);
         }
 
@@ -1681,6 +1708,7 @@ export class BattleView extends Component {
     private updateScroll(d: number): void {
         // 全场停止：只要有敌人停住不动（到底 / 被技能定住），整个世界一起停
         const worldPaused = applyStopBlocking(this.m_Enemies);
+        this.m_WorldPaused = worldPaused;
         const step = advanceWorldScroll(
             this.m_ScrollY,
             waveScaling(this.m_Wave).fallSpeed,
@@ -1775,9 +1803,9 @@ export class BattleView extends Component {
                 const baseScale = enemyVisualScale(enemy);
                 setPos(node, enemy.x, enemy.y);
                 setScale(node, baseScale);
-                // 震动改的是节点位置、形变改的是节点缩放，所以必须在本帧基准位置 / 基准缩放定好之后再更新
+                // 抖动作用于 ArtRoot（局部基准 0,0）；形变作用于根节点（基准缩放 = baseScale，只压缩）
                 const feedback = this.m_EnemyFeedback.get(enemy.id);
-                if (feedback) feedback.update(d, enemy.x, enemy.y, baseScale);
+                if (feedback) feedback.update(d, 0, 0, baseScale);
                 // 灼烧 / 冰冻覆盖：显隐完全由 enemy.status 决定（不另记计时），
                 // 所以刷新 / 提前清除（死亡）都会自动反映到画面上
                 const statusFx = this.m_EnemyStatus.get(enemy.id);
@@ -2139,7 +2167,9 @@ export class BattleView extends Component {
             return;
         }
 
-        this.m_WaveClearTimer += d;
+        // 换波计时同样随世界暂停一起停：否则暂停期间到达的"下一波"会在恢复瞬间
+        // 一次性把整批敌人倒出来，和上一波挤在同一位置（出生排期也是按世界位移设计的）。
+        this.m_WaveClearTimer += this.m_WorldPaused ? 0 : d;
         if (this.m_WaveClearTimer < GameTuning.waveInterval) return;
 
         if (this.m_Wave >= GameTuning.wavesPerLevel) {

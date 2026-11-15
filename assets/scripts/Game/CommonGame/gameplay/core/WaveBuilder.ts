@@ -320,6 +320,12 @@ export function synthDefId(quality: Quality, type: EnemyType, shape: EnemyShape)
  * 所以这里改成"本带要出生，先等已出生的内容下落 rows(本带) × rowGapCells 格"：
  *     行间隔时间 = rowGapCells × cellSize ÷ 当前波下落速度
  * 速度随波次变快时行间隔自动变短，屏幕上看到的行距始终恒定。
+ *
+ * ⚠️ **调用方契约**：这些延迟的单位是"**世界滚动时间**"。世界暂停（任一敌人 Telegraph /
+ * 被冰冻 → `applyStopBlocking`）时，玩法层必须让出生计时一起停（见
+ * `BattleView.updateSpawning`）。若世界停住但计时照走，上一行还没让开就会生成下一行
+ * → **敌人重叠**。这条约束是按"世界位移"定义的，与 cellSize / 敌人大小无关，
+ * 所以以后调整格子或敌人尺寸都不会破坏行距（只要别在暂停时继续出怪）。
  */
 export function buildSpawnSchedule(plan: WavePlan, options: WaveBuildOptions = {}): SpawnEvent[] {
     const events: SpawnEvent[] = [];
